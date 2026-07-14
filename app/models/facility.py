@@ -31,7 +31,8 @@ class Facility(Base):
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
 
     # 공간 쿼리용 (ST_DWithin 등). SRID 4326 = WGS84
-    geom: Mapped[str] = mapped_column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
+    # spatial_index=False: GIST 인덱스는 아래 __table_args__의 ix_facilities_geom으로 명시 관리 (중복 방지)
+    geom: Mapped[str] = mapped_column(Geometry(geometry_type="POINT", srid=4326, spatial_index=False), nullable=False)
 
     # 접근성 필드 7종 (memory 기준 확정)
     wheelchair_accessible: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
