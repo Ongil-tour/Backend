@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     TOUR_API_KEY: str = ""
     TOUR_API_BASE_URL: str = "https://apis.data.go.kr/B551011/KorService2"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()
