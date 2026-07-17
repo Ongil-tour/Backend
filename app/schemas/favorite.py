@@ -25,3 +25,7 @@ class FavoriteRead(BaseModel):
     facility_id: int
     favorite_list_id: int
     created_at: datetime
+
+class FavoriteStatusRead(BaseModel):
+    is_favorite: bool
+    favorite_list_ids: list[int]
