@@ -1,6 +1,6 @@
 # Ongil-tour Backend
 
-무장애(Barrier-Free) 관광 정보 서비스 Ongil-tour의 백엔드. FastAPI + PostgreSQL(PostGIS) + Redis, Docker Compose로 로컬 개발, Render로 배포.
+무장애(Barrier-Free) 관광 정보 서비스 Ongil-tour의 백엔드. FastAPI + PostgreSQL + Redis, Docker Compose로 로컬 개발, Render로 배포.
 
 ## 담당
 
@@ -36,10 +36,9 @@ docker compose run --rm api alembic upgrade head
 docker compose run --rm api alembic revision --autogenerate -m "설명"
 docker compose run --rm api alembic upgrade head
 ```
-PostGIS의 `spatial_ref_sys` 시스템 테이블은 `alembic/env.py`의 `include_object` 필터로 diff에서 제외되어 있음. 새 모델 추가 시 이 필터를 건드릴 필요는 없음.
 
 ### 4. Mock 유저 시드
-JWT가 아직 없으므로 `app/deps.py`의 `get_current_user_mock()`이 항상 `id=1` 유저를 반환한다. 로컬 DB에 해당 유저가 없으면 인증이 필요한 라우터 호출 시 에러가 나므로 최초 1회 시드 필요:
+JWT가 아직 없으므로 `app/deps.py`의 `get_current_user_mock()`이 항상 고정 UUID(`MOCK_USER_ID`) 유저를 반환한다. 로컬 DB에 해당 유저가 없으면 인증이 필요한 라우터 호출 시 에러가 나므로 최초 1회 시드 필요:
 ```
 docker compose run --rm api python -m app.scripts.seed
 ```
@@ -53,7 +52,7 @@ curl http://localhost:8000/health
 
 ## Mock Auth (JWT 완성 전)
 
-이다영의 실 JWT 인증이 나오기 전까지, 인증이 필요한 라우터는 `Depends(get_current_user_mock)`을 사용해 항상 시드된 `id=1` 유저로 동작한다. 실 인증 연동 시 `get_current_user_mock` → `get_current_user`로 교체하고 `app/deps.py`의 mock 함수는 삭제할 것.
+이다영의 실 JWT 인증이 나오기 전까지, 인증이 필요한 라우터는 `Depends(get_current_user_mock)`을 사용해 항상 시드된 고정 UUID 유저로 동작한다. 실 인증 연동 시 `get_current_user_mock` → `get_current_user`로 교체하고 `app/deps.py`의 mock 함수는 삭제할 것.
 
 ## 브랜치 시작하는 법 (팀원 공통)
 
@@ -103,10 +102,13 @@ git push -u origin auth-users     # (또는 본인 브랜치명)
 
 ## 스키마 개요
 
-- `facilities`: 시설 마스터. 접근성 필드 7종(휠체어 접근성/경사로/장애인 화장실/장애인 주차장/엘리베이터/반려동물 동반/수유실) + `geom`(PostGIS Point, 공간쿼리용) + `latitude`/`longitude`(응답용).
-- `favorite_lists`: 유저당 고정 3개 리스트(`list_type` enum). 실제 명칭(want_to_go/visited/custom)은 확정 문서 나오면 `app/models/favorite.py`의 `ListType`과 함께 교체.
-- `favorites`: `facility_id` FK로 정규화, TourAPI raw 필드 없음.
-- `users` / `refresh_tokens`: OAuth(카카오/구글/네이버) 기반.
+확정 스키마 기준 (PK는 전부 UUID, PostGIS 미사용 - 반경/영역 검색은 lat/lng 기반 bounding box·Haversine으로 처리):
+
+- `facilities`: 시설 마스터. `content_id`/`content_type_id`(TourAPI 원본 식별자) + `lat`/`lng` + 접근성 필드 6종(휠체어 접근성/경사로/장애인 화장실/장애인 주차장/엘리베이터/반려동물 동반/수유실).
+- `users`: `email`/`created_at`만 보유. 소셜 로그인은 `social_accounts`(1:N), UI 설정은 `user_settings`(1:1)로 분리.
+- `favorite_lists`: 유저당 고정 3개 리스트. `list_type`은 `FREQUENT`/`WISHLIST`/`VISITED` (라벨은 DB에 저장하지 않고 앱에서 매핑).
+- `favorites`: `user_id`/`list_id`/`facility_id` FK로 정규화, TourAPI raw 필드 없음.
+- `refresh_tokens`: 멀티 디바이스 로그인 세션.
 
 ## 자주 쓰는 명령어
 
