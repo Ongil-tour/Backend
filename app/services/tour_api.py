@@ -40,7 +40,7 @@ class TourApiError(RuntimeError):
     pass
 
 
-def _get(base_url: str, operation: str, **params) -> dict:
+def _request_items(base_url: str, operation: str, **params):
     resp = httpx.get(
         f"{base_url}/{operation}",
         params={"serviceKey": settings.TOUR_API_KEY, **_COMMON_PARAMS, **params},
@@ -53,12 +53,24 @@ def _get(base_url: str, operation: str, **params) -> dict:
     if header["resultCode"] not in ("0000", "03"):  # 03 = NODATA_ERROR (해당 데이터 없음)
         raise TourApiError(f"{operation}({params}) failed: {header['resultMsg']}")
 
-    items = data["response"]["body"]["items"]
+    return data["response"]["body"]["items"]
+
+
+def _get(base_url: str, operation: str, **params) -> dict:
+    """단건 조회용. item이 여러 개면 첫 번째만 반환한다."""
+    items = _request_items(base_url, operation, **params)
     if items == "":
         return {}
-
     item = items["item"]
     return item[0] if isinstance(item, list) else item
+
+
+def _get_list(base_url: str, operation: str, **params) -> list[dict]:
+    items = _request_items(base_url, operation, **params)
+    if items == "":
+        return []
+    item = items["item"]
+    return item if isinstance(item, list) else [item]
 
 
 def get_detail_common(content_id: str) -> dict:
@@ -74,3 +86,16 @@ def get_detail_intro(content_id: str, content_type_id: str) -> dict:
 def get_detail_with_tour(content_id: str) -> dict:
     """무장애 정보(parking, restroom, elevator, lactationroom, helpdog, route, exit 등, 전부 텍스트)."""
     return _get(KOR_WITH_SERVICE_BASE, "detailWithTour2", contentId=content_id)
+
+
+def get_area_based_list(content_type_id: str, area_code: str, num_of_rows: int = 20, page_no: int = 1) -> list[dict]:
+    """지역+타입 기준 콘텐츠 목록. 배치에서 contentId 리스트를 뽑을 때 사용 (item에 contentid, title 포함)."""
+    return _get_list(
+        KOR_SERVICE_BASE,
+        "areaBasedList2",
+        arrange="A",
+        numOfRows=num_of_rows,
+        pageNo=page_no,
+        contentTypeId=content_type_id,
+        areaCode=area_code,
+    )
