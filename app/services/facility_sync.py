@@ -44,10 +44,11 @@ def assemble_facility(content_id: str, content_type_id: str, category: str | Non
         "lng": float(common["mapx"]),
         "operating_hours": operating_hours or None,
         "phone": common.get("tel") or None,
-        # wheelchair_accessible/ramp: detailWithTour2에 전용 필드가 없고 route/exit
-        # 자유서술 텍스트에만 나타남. 매핑 방식 보류 상태라 일단 채우지 않는다. TODO.
-        "wheelchair_accessible": None,
-        "ramp": None,
+        # route=접근로(경사로/단차 서술), exit=주출입구(휠체어 접근 가능 서술).
+        # 표본 확인 결과 값이 있을 때 전부 긍정 서술(부정 표현 없음)이라 non-empty=true로 판단.
+        # wheelchair 필드는 접근성이 아니라 "휠체어 대여 가능 여부"라 매핑에서 제외.
+        "wheelchair_accessible": _has_info(accessibility.get("exit")),
+        "ramp": _has_info(accessibility.get("route")),
         "disabled_restroom": _has_info(accessibility.get("restroom")),
         "disabled_parking": _has_info(accessibility.get("parking")),
         "elevator": _has_info(accessibility.get("elevator")),
