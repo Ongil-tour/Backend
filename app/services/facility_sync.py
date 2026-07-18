@@ -44,11 +44,11 @@ def assemble_facility(content_id: str, content_type_id: str, category: str | Non
         "lng": float(common["mapx"]),
         "operating_hours": operating_hours or None,
         "phone": common.get("tel") or None,
-        # route=접근로(경사로/단차 서술), exit=주출입구(휠체어 접근 가능 서술).
+        # route=접근로(경사로/단차 서술), exit=주출입구(휠체어 접근 가능 서술) - 사실상 같은 개념(휠체어 경사로)이라
+        # 둘 중 하나라도 서술이 있으면 휠체어 접근 가능으로 통합 판단한다.
         # 표본 확인 결과 값이 있을 때 전부 긍정 서술(부정 표현 없음)이라 non-empty=true로 판단.
         # wheelchair 필드는 접근성이 아니라 "휠체어 대여 가능 여부"라 매핑에서 제외.
-        "wheelchair_accessible": _has_info(accessibility.get("exit")),
-        "ramp": _has_info(accessibility.get("route")),
+        "wheelchair_accessible": _has_info(accessibility.get("exit")) or _has_info(accessibility.get("route")),
         "disabled_restroom": _has_info(accessibility.get("restroom")),
         "disabled_parking": _has_info(accessibility.get("parking")),
         "elevator": _has_info(accessibility.get("elevator")),

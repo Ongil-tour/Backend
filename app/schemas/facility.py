@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FacilityRead(BaseModel):
@@ -19,7 +19,6 @@ class FacilityRead(BaseModel):
     lng: float
 
     wheelchair_accessible: bool | None
-    ramp: bool | None
     disabled_restroom: bool | None
     disabled_parking: bool | None
     elevator: bool | None
@@ -40,3 +39,64 @@ class FacilitySummary(BaseModel):
     lat: float
     lng: float
     wheelchair_accessible: bool | None
+
+
+class MatchByLocationRequest(BaseModel):
+    lat: float
+    lng: float
+    radius: float = 100
+
+
+class FacilityAccessibility(BaseModel):
+    """무장애 정보 6종. camelCase 응답 계약을 위해 alias를 둔다."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    wheelchair_accessible: bool = Field(alias="wheelchairAccessible")
+    disabled_restroom: bool = Field(alias="disabledRestroom")
+    parking_lot: bool = Field(alias="parkingLot")
+    elevator: bool
+    pet_friendly: bool = Field(alias="petFriendly")
+    nursing_room: bool = Field(alias="nursingRoom")
+
+    @classmethod
+    def from_facility(cls, facility) -> "FacilityAccessibility":
+        return cls(
+            wheelchair_accessible=bool(facility.wheelchair_accessible),
+            disabled_restroom=bool(facility.disabled_restroom),
+            parking_lot=bool(facility.disabled_parking),
+            elevator=bool(facility.elevator),
+            pet_friendly=bool(facility.pet_friendly),
+            nursing_room=bool(facility.nursing_room),
+        )
+
+
+class FacilityMatchResult(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: uuid.UUID
+    name: str
+    address: str | None
+    lat: float
+    lng: float
+    operating_hours: str | None = Field(alias="operatingHours")
+    phone: str | None
+    accessibility: FacilityAccessibility
+
+    @classmethod
+    def from_facility(cls, facility) -> "FacilityMatchResult":
+        return cls(
+            id=facility.id,
+            name=facility.name,
+            address=facility.address,
+            lat=facility.lat,
+            lng=facility.lng,
+            operating_hours=facility.operating_hours,
+            phone=facility.phone,
+            accessibility=FacilityAccessibility.from_facility(facility),
+        )
+
+
+class MatchByLocationResponse(BaseModel):
+    matched: bool
+    facility: FacilityMatchResult | None = None
+    message: str | None = None

@@ -10,8 +10,8 @@ TourAPI(한국관광공사) 클라이언트.
   INVALID_REQUEST_PARAMETER_ERROR). detailIntro2는 contentTypeId가 필수다.
 - detailIntro2 응답 필드는 contentTypeId별로 완전히 다르다 (OPERATING_HOURS_FIELD_BY_TYPE 참고).
 - detailWithTour2 필드는 contentTypeId와 무관하게 항상 동일한 필드셋이며, 전부
-  boolean이 아니라 자유서술 텍스트다(값 있으면 문자열, 없으면 ""). wheelchair_accessible/
-  ramp는 전용 필드가 없고 route/exit 텍스트에 서술돼 있어서 매핑을 보류했다(TODO).
+  boolean이 아니라 자유서술 텍스트다(값 있으면 문자열, 없으면 ""). wheelchair_accessible은
+  전용 필드가 없고 route/exit 텍스트 서술 여부로 판단한다(app/services/facility_sync.py 참고).
 """
 import httpx
 

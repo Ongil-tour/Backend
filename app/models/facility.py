@@ -32,9 +32,9 @@ class Facility(Base):
     operating_hours: Mapped[str | None] = mapped_column(Text, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
-    # 한국관광공사 무장애 정보 (6종 확정)
+    # 한국관광공사 무장애 정보 (6종 확정). ramp는 wheelchair_accessible과 의미가 겹쳐(휠체어 경사로) 제거하고
+    # 휠체어 접근 가능 여부 하나로 통합했다.
     wheelchair_accessible: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))
-    ramp: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))
     disabled_restroom: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))
     disabled_parking: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))
     elevator: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))

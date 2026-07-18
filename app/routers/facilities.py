@@ -1,5 +1,5 @@
 """
-Facilities 라우터 (담당: 이가희) - 총 4개 엔드포인트.
+Facilities 라우터 (담당: 이가희) - 총 5개 엔드포인트.
 TourAPI는 배치로 미리 적재된 내부 DB(facilities 테이블)를 조회하는 구조 (실시간 프록시 아님).
 detailWithTour2 호출은 상세 조회 시 온디맨드로만 연동 (memory 기준).
 """
@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session
 
 from app.crud import facility as facility_crud
 from app.core.database import get_db
-from app.schemas.facility import FacilityRead, FacilitySummary
+from app.schemas.facility import (
+    FacilityMatchResult,
+    FacilityRead,
+    FacilitySummary,
+    MatchByLocationRequest,
+    MatchByLocationResponse,
+)
 
 router = APIRouter(prefix="/facilities", tags=["facilities"])
 
@@ -27,6 +33,17 @@ def list_facilities(category: str | None = None, db: Session = Depends(get_db)):
 def search_facilities(keyword: str, db: Session = Depends(get_db)):
     """이름/주소 키워드 검색."""
     return facility_crud.search_facilities(db, keyword)
+
+
+@router.post("/match-by-location", response_model=MatchByLocationResponse)
+def match_facility_by_location(payload: MatchByLocationRequest, db: Session = Depends(get_db)):
+    """주어진 좌표 반경(m) 내에서 가장 가까운 시설 1건을 매칭 (없으면 matched=false)."""
+    candidates = facility_crud.facilities_within_radius(
+        db, lat=payload.lat, lng=payload.lng, radius_m=payload.radius
+    )
+    if not candidates:
+        return MatchByLocationResponse(matched=False, message="등록된 무장애 관광 정보가 없습니다.")
+    return MatchByLocationResponse(matched=True, facility=FacilityMatchResult.from_facility(candidates[0]))
 
 
 @router.get("/{facility_id}", response_model=FacilityRead)
