@@ -1,8 +1,11 @@
 """
 Favorites 라우터 (담당: 신지민) - 총 5개 엔드포인트.
-favorite_lists는 list_type만 갖는 3개 고정 리스트, favorites는 facility_id FK 참조로 정규화됨 (memory 기준).
+favorite_lists는 list_type(FREQUENT/WISHLIST/VISITED)만 갖는 3개 고정 리스트,
+favorites는 facility_id FK 참조로 정규화됨 (확정 스키마 기준).
 DB 쓰기는 저장 시점에만 발생 (조회는 프론트 메모리 캐시 활용).
 """
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -16,6 +19,7 @@ from app.schemas.favorite import (
     FavoriteRead,
     FavoriteStatusRead,
 )
+
 router = APIRouter(prefix="/favorites", tags=["favorites"])
 
 
@@ -34,6 +38,8 @@ def get_my_favorite_lists(
         db=db,
         user_id=current_user.id,
     )
+
+
 @router.get(
     "/lists/{list_id}",
     response_model=list[FavoriteRead],
@@ -54,7 +60,7 @@ def get_my_favorite_lists(
     },
 )
 def get_favorite_list_items(
-    list_id: int,
+    list_id: uuid.UUID,
     current_user: User = Depends(get_current_user_mock),
     db: Session = Depends(get_db),
 ):
@@ -75,6 +81,7 @@ def get_favorite_list_items(
         user_id=current_user.id,
         list_id=list_id,
     )
+
 
 @router.post(
     "",
@@ -103,7 +110,49 @@ def add_favorite(
     current_user: User = Depends(get_current_user_mock),
     db: Session = Depends(get_db),
 ):
-    ...
+    favorite_list = favorite_crud.get_favorite_list_by_id(
+        db=db,
+        user_id=current_user.id,
+        list_id=payload.list_id,
+    )
+
+    if favorite_list is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="즐겨찾기 리스트를 찾을 수 없습니다.",
+        )
+
+    facility = favorite_crud.get_facility_by_id(
+        db=db,
+        facility_id=payload.facility_id,
+    )
+
+    if facility is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="시설을 찾을 수 없습니다.",
+        )
+
+    existing_favorite = favorite_crud.get_existing_favorite(
+        db=db,
+        list_id=payload.list_id,
+        facility_id=payload.facility_id,
+    )
+
+    if existing_favorite is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="이미 해당 리스트에 저장된 시설입니다.",
+        )
+
+    return favorite_crud.create_favorite(
+        db=db,
+        user_id=current_user.id,
+        facility_id=payload.facility_id,
+        list_id=payload.list_id,
+    )
+
+
 @router.delete(
     "/{favorite_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -123,11 +172,30 @@ def add_favorite(
     },
 )
 def remove_favorite(
-    favorite_id: int,
+    favorite_id: uuid.UUID,
     current_user: User = Depends(get_current_user_mock),
     db: Session = Depends(get_db),
 ):
-    ...
+    favorite = favorite_crud.get_favorite_by_id(
+        db=db,
+        user_id=current_user.id,
+        favorite_id=favorite_id,
+    )
+
+    if favorite is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="즐겨찾기를 찾을 수 없습니다.",
+        )
+
+    favorite_crud.delete_favorite(
+        db=db,
+        favorite=favorite,
+    )
+
+    return None
+
+
 @router.get(
     "/{facility_id}/status",
     response_model=FavoriteStatusRead,
@@ -148,8 +216,30 @@ def remove_favorite(
     },
 )
 def check_favorite_status(
-    facility_id: int,
+    facility_id: uuid.UUID,
     current_user: User = Depends(get_current_user_mock),
     db: Session = Depends(get_db),
 ):
-    ...
+    facility = favorite_crud.get_facility_by_id(
+        db=db,
+        facility_id=facility_id,
+    )
+
+    if facility is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="시설을 찾을 수 없습니다.",
+        )
+
+    favorites = favorite_crud.get_favorites_by_facility(
+        db=db,
+        user_id=current_user.id,
+        facility_id=facility_id,
+    )
+
+    return {
+        "is_favorite": len(favorites) > 0,
+        "favorite_list_ids": [
+            favorite.list_id for favorite in favorites
+        ],
+    }
