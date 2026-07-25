@@ -9,15 +9,37 @@ from app.models.facility import Facility
 def get_favorite_lists_by_user(
     db: Session,
     user_id: uuid.UUID,
-) -> list[FavoriteList]:
-    """특정 사용자가 가진 즐겨찾기 목록을 조회한다."""
-    return (
+) -> list[dict]:
+    """특정 사용자의 즐겨찾기 목록과 목록별 저장 개수를 조회한다."""
+    favorite_lists = (
         db.query(FavoriteList)
         .filter(FavoriteList.user_id == user_id)
         .order_by(FavoriteList.created_at.asc())
         .all()
     )
 
+    result = []
+
+    for favorite_list in favorite_lists:
+        favorite_count = (
+            db.query(Favorite)
+            .filter(
+                Favorite.list_id == favorite_list.id,
+                Favorite.user_id == user_id,
+            )
+            .count()
+        )
+
+        result.append(
+            {
+                "id": favorite_list.id,
+                "list_type": favorite_list.list_type,
+                "favorite_count": favorite_count,
+                "created_at": favorite_list.created_at,
+            }
+        )
+
+    return result
 
 def get_favorite_list_by_id(
     db: Session,

@@ -11,6 +11,7 @@ class FavoriteListRead(BaseModel):
 
     id: uuid.UUID
     list_type: ListType
+    favorite_count: int
     created_at: datetime
 
 
