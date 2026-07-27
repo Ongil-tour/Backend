@@ -40,6 +40,14 @@ class TourApiError(RuntimeError):
     pass
 
 
+class TourApiQuotaExceededError(TourApiError):
+    """일일/트래픽 쿼터 초과로 API가 더 이상 정상 응답하지 않는 상태."""
+
+
+# data.go.kr 공통 에러코드 중 쿼터/트래픽 관련. 22 = LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR.
+_QUOTA_EXCEEDED_RESULT_CODES = {"22"}
+
+
 def _request_items(base_url: str, operation: str, **params):
     resp = httpx.get(
         f"{base_url}/{operation}",
@@ -47,9 +55,17 @@ def _request_items(base_url: str, operation: str, **params):
         timeout=10.0,
     )
     resp.raise_for_status()
-    data = resp.json()
-    header = data["response"]["header"]
+    try:
+        data = resp.json()
+    except ValueError:
+        # 쿼터를 넘기면 게이트웨이가 _type=json을 무시하고 XML 에러 페이지를 내려준다.
+        raise TourApiQuotaExceededError(
+            f"{operation}: 쿼터 초과로 추정되는 비-JSON 응답: {resp.text[:200]!r}"
+        )
 
+    header = data["response"]["header"]
+    if header["resultCode"] in _QUOTA_EXCEEDED_RESULT_CODES:
+        raise TourApiQuotaExceededError(f"{operation}({params}): {header['resultMsg']}")
     if header["resultCode"] not in ("0000", "03"):  # 03 = NODATA_ERROR (해당 데이터 없음)
         raise TourApiError(f"{operation}({params}) failed: {header['resultMsg']}")
 

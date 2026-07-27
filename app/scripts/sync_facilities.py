@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models.facility import Facility
 from app.services.facility_sync import assemble_facility
-from app.services.tour_api import get_area_based_list
+from app.services.tour_api import TourApiQuotaExceededError, get_area_based_list
 
 # TourAPI 표준 시도 단위 areaCode 전체(17개)
 AREA_NAMES = {
@@ -76,33 +76,46 @@ def _iter_area_content_items(area_code: str, content_type_id: str):
 def sync(area_codes: list[str], content_types: dict[str, str], force: bool = False) -> None:
     db = SessionLocal()
     ok, failed, skipped = 0, 0, 0
+    quota_exceeded = False
     try:
         already_synced = set() if force else _existing_content_ids(db)
         for area_code in area_codes:
+            if quota_exceeded:
+                break
             area_name = AREA_NAMES.get(area_code, area_code)
             for content_type_id, category in content_types.items():
                 new_in_group = 0
-                for item in _iter_area_content_items(area_code, content_type_id):
-                    content_id = item["contentid"]
-                    if content_id in already_synced:
-                        skipped += 1
-                        continue
-                    try:
-                        row = assemble_facility(content_id, content_type_id, category=category)
-                        upsert_facility(db, row)
-                        db.commit()
-                        already_synced.add(content_id)
-                        ok += 1
-                        new_in_group += 1
-                        time.sleep(DETAIL_REQUEST_DELAY)
-                    except Exception as e:
-                        db.rollback()
-                        failed += 1
-                        print(f"  SKIP {content_id} ({item.get('title')}): {e}")
+                try:
+                    for item in _iter_area_content_items(area_code, content_type_id):
+                        content_id = item["contentid"]
+                        if content_id in already_synced:
+                            skipped += 1
+                            continue
+                        try:
+                            row = assemble_facility(content_id, content_type_id, category=category)
+                            upsert_facility(db, row)
+                            db.commit()
+                            already_synced.add(content_id)
+                            ok += 1
+                            new_in_group += 1
+                            time.sleep(DETAIL_REQUEST_DELAY)
+                        except TourApiQuotaExceededError:
+                            raise
+                        except Exception as e:
+                            db.rollback()
+                            failed += 1
+                            print(f"  SKIP {content_id} ({item.get('title')}): {e}")
+                except TourApiQuotaExceededError as e:
+                    print(f"[{area_name}/{category}] 쿼터 초과로 중단: {e}")
+                    quota_exceeded = True
+                    break
                 print(f"[{area_name}/{category}] 신규 {new_in_group}건 적재")
     finally:
         db.close()
-    print(f"완료: 성공 {ok}건, 스킵(기적재) {skipped}건, 실패 {failed}건")
+    status = "쿼터 초과로 중단됨" if quota_exceeded else "완료"
+    print(f"{status}: 성공 {ok}건, 스킵(기적재) {skipped}건, 실패 {failed}건")
+    if quota_exceeded:
+        print("이미 적재된 content_id는 다음 실행에서 자동 skip되니 그대로 재실행하면 이어서 진행된다.")
 
 
 def _parse_args() -> argparse.Namespace:
