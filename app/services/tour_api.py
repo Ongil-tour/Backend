@@ -73,7 +73,15 @@ def _request_body(base_url: str, operation: str, **params) -> dict:
         f"{base_url}/{operation}",
         params={"serviceKey": settings.TOUR_API_KEY, **_COMMON_PARAMS, **params},
     )
-    resp.raise_for_status()
+    if resp.status_code == 429:
+        # 게이트웨이 레벨 트래픽 제한(초당/일일 호출 한도 초과)도 쿼터 초과로 취급한다.
+        # raise_for_status()에 맡기면 일반 Exception(HTTPStatusError)이 되어 배치가
+        # 이걸 "이 항목만 실패"로 오인하고 남은 수천 건에 계속 429를 날리며 헛돈다.
+        raise TourApiQuotaExceededError(f"{operation}: 429 Too Many Requests (트래픽/쿼터 초과)")
+    if resp.status_code >= 400:
+        # httpx의 기본 메시지는 serviceKey가 담긴 전체 URL을 그대로 노출하므로
+        # (배치 실패 로그에 API 키가 평문으로 수천 줄 남는다), 직접 sanitize해서 던진다.
+        raise TourApiError(f"{operation}: HTTP {resp.status_code} {resp.reason_phrase}")
     try:
         data = resp.json()
     except ValueError:
