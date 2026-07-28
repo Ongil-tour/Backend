@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -100,3 +101,28 @@ class MatchByLocationResponse(BaseModel):
     matched: bool
     facility: FacilityMatchResult | None = None
     message: str | None = None
+
+
+class UnifiedFacilityItem(BaseModel):
+    """/map/markers 통합 응답. 내부 facilities DB + 카카오 로컬(편의점/병원 실시간)을
+    같은 shape으로 합친다. kakao 소스는 무장애 6종/operating_hours가 전부 None
+    (실제 값이 아니라 '정보 없음'이라는 뜻 - 카카오 로컬 API가 해당 정보를 제공하지 않음)."""
+
+    source: Literal["internal", "kakao"]
+    id: str  # internal=uuid 문자열, kakao=place id 문자열
+    name: str
+    category: str  # 관광지|식당|카페|숙소|화장실|주차장|편의점|병원
+    address: str | None
+    phone: str | None
+    operating_hours: str | None
+    lat: float
+    lng: float
+
+    wheelchair_accessible: bool | None
+    disabled_restroom: bool | None
+    disabled_parking: bool | None
+    elevator: bool | None
+    pet_friendly: bool | None
+    nursing_room: bool | None
+
+    place_url: str | None = None  # kakao 상세 링크. internal은 None
