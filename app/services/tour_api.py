@@ -13,9 +13,14 @@ TourAPI(한국관광공사) 클라이언트.
   boolean이 아니라 자유서술 텍스트다(값 있으면 문자열, 없으면 ""). wheelchair_accessible은
   전용 필드가 없고 route/exit 텍스트 서술 여부로 판단한다(app/services/facility_sync.py 참고).
 """
+import time
+
 import httpx
 
 from app.core.config import settings
+
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_S = 2.0
 
 KOR_SERVICE_BASE = "https://apis.data.go.kr/B551011/KorService2"
 KOR_WITH_SERVICE_BASE = "https://apis.data.go.kr/B551011/KorWithService2"
@@ -48,12 +53,25 @@ class TourApiQuotaExceededError(TourApiError):
 _QUOTA_EXCEEDED_RESULT_CODES = {"22"}
 
 
+def _get_with_retry(url: str, params: dict) -> httpx.Response:
+    """TourAPI가 가끔 응답을 10초 넘게 끄는 경우가 있어(쿼터 초과와 무관한 단순 지연),
+    타임아웃/연결 오류에 한해 지수 백오프로 재시도한다."""
+    last_error: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return httpx.get(url, params=params, timeout=20.0)
+        except httpx.TimeoutException as e:
+            last_error = e
+            if attempt < _MAX_RETRIES - 1:
+                time.sleep(_RETRY_BACKOFF_S * (2**attempt))
+    raise last_error
+
+
 def _request_body(base_url: str, operation: str, **params) -> dict:
     """공통 응답 검증 후 body 전체(items뿐 아니라 totalCount 등)를 반환한다."""
-    resp = httpx.get(
+    resp = _get_with_retry(
         f"{base_url}/{operation}",
         params={"serviceKey": settings.TOUR_API_KEY, **_COMMON_PARAMS, **params},
-        timeout=10.0,
     )
     resp.raise_for_status()
     try:
