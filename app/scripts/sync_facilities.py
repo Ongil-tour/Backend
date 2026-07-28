@@ -6,6 +6,7 @@ TourAPI 지역기반 목록 조회 -> contentId 순회 -> assemble_facility -> f
   전국 전체: docker compose run --rm api python -m app.scripts.sync_facilities
   일부만(쿼터 아낄 때): docker compose run --rm api python -m app.scripts.sync_facilities --areas 1,31 --types 12,39
   이미 저장된 content_id는 기본적으로 skip(재실행해도 안전) - 강제 재조회는 --force
+  규모 산정(상세 조회 없이 건수/예상 소요일만 확인): --count-only
 
 주의(API 쿼터): 목록조회 1콜 + 시설당 상세 3콜(detailCommon2/detailIntro2/detailWithTour2).
 전국 전체를 한 번에 돌리면 대량 트래픽이 나가므로, --areas/--types로 나눠 여러 날에 걸쳐
@@ -18,14 +19,14 @@ TourAPI 지역기반 목록 조회 -> contentId 순회 -> assemble_facility -> f
 import argparse
 import time
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models.facility import Facility
 from app.services.facility_sync import assemble_facility
-from app.services.tour_api import TourApiQuotaExceededError, get_area_based_list
+from app.services.tour_api import TourApiQuotaExceededError, get_area_based_count, get_area_based_list
 
 # TourAPI 표준 시도 단위 areaCode 전체(17개)
 AREA_NAMES = {
@@ -51,6 +52,7 @@ DETAIL_REQUEST_DELAY = 0.1   # 시설 1건(상세 3콜) 처리 후 딜레이(초
 def upsert_facility(db: Session, row: dict) -> None:
     stmt = pg_insert(Facility).values(**row)
     update_cols = {k: v for k, v in row.items() if k != "content_id"}
+    update_cols["synced_at"] = func.now()  # 재동기화 시 "배치 최종 갱신 시각"이 실제로 갱신되도록
     stmt = stmt.on_conflict_do_update(index_elements=["content_id"], set_=update_cols)
     db.execute(stmt)
 
@@ -71,6 +73,35 @@ def _iter_area_content_items(area_code: str, content_type_id: str):
             return
         page_no += 1
         time.sleep(LIST_REQUEST_DELAY)
+
+
+DAILY_QUOTA_PER_SERVICE = 1000  # KorService2, KorWithService2 각각 1일 호출 한도
+
+
+def count_only(area_codes: list[str], content_types: dict[str, str]) -> None:
+    """실제 상세 조회 없이 지역x타입별 전체 건수만 집계한다 (list 콜만 사용, 쿼터 거의 소모 안 함)."""
+    grand_total = 0
+    for area_code in area_codes:
+        area_name = AREA_NAMES.get(area_code, area_code)
+        for content_type_id, category in content_types.items():
+            count = get_area_based_count(content_type_id, area_code)
+            grand_total += count
+            print(f"[{area_name}/{category}] {count}건")
+            time.sleep(LIST_REQUEST_DELAY)
+
+    # 시설 1건당: KorService2(detailCommon2+detailIntro2) 2콜, KorWithService2(detailWithTour2) 1콜
+    kor_service_calls = grand_total * 2
+    kor_with_service_calls = grand_total
+    kor_service_days = -(-kor_service_calls // DAILY_QUOTA_PER_SERVICE)  # ceil
+    kor_with_service_days = -(-kor_with_service_calls // DAILY_QUOTA_PER_SERVICE)
+
+    print(f"\n전체 대상: {grand_total}건")
+    print(f"KorService2 예상 콜: {kor_service_calls}건 (1일 {DAILY_QUOTA_PER_SERVICE}건 기준 약 {kor_service_days}일)")
+    print(
+        f"KorWithService2 예상 콜: {kor_with_service_calls}건 "
+        f"(1일 {DAILY_QUOTA_PER_SERVICE}건 기준 약 {kor_with_service_days}일)"
+    )
+    print(f"병목 기준(더 오래 걸리는 쪽) 예상 소요일: 약 {max(kor_service_days, kor_with_service_days)}일")
 
 
 def sync(area_codes: list[str], content_types: dict[str, str], force: bool = False) -> None:
@@ -123,6 +154,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--areas", help="쉼표구분 areaCode 목록 (기본: 전국 17개)")
     parser.add_argument("--types", help="쉼표구분 contentTypeId 목록 (기본: 12,14,32,39)")
     parser.add_argument("--force", action="store_true", help="이미 저장된 content_id도 강제 재조회")
+    parser.add_argument(
+        "--count-only",
+        action="store_true",
+        help="상세 조회 없이 지역x타입별 전체 건수와 예상 소요일만 출력하고 종료 (규모 산정용)",
+    )
     return parser.parse_args()
 
 
@@ -134,4 +170,7 @@ if __name__ == "__main__":
         if args.types
         else CONTENT_TYPE_CATEGORY
     )
-    sync(areas, types, force=args.force)
+    if args.count_only:
+        count_only(areas, types)
+    else:
+        sync(areas, types, force=args.force)

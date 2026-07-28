@@ -48,7 +48,8 @@ class TourApiQuotaExceededError(TourApiError):
 _QUOTA_EXCEEDED_RESULT_CODES = {"22"}
 
 
-def _request_items(base_url: str, operation: str, **params):
+def _request_body(base_url: str, operation: str, **params) -> dict:
+    """공통 응답 검증 후 body 전체(items뿐 아니라 totalCount 등)를 반환한다."""
     resp = httpx.get(
         f"{base_url}/{operation}",
         params={"serviceKey": settings.TOUR_API_KEY, **_COMMON_PARAMS, **params},
@@ -69,7 +70,11 @@ def _request_items(base_url: str, operation: str, **params):
     if header["resultCode"] not in ("0000", "03"):  # 03 = NODATA_ERROR (해당 데이터 없음)
         raise TourApiError(f"{operation}({params}) failed: {header['resultMsg']}")
 
-    return data["response"]["body"]["items"]
+    return data["response"]["body"]
+
+
+def _request_items(base_url: str, operation: str, **params):
+    return _request_body(base_url, operation, **params)["items"]
 
 
 def _get(base_url: str, operation: str, **params) -> dict:
@@ -115,3 +120,18 @@ def get_area_based_list(content_type_id: str, area_code: str, num_of_rows: int =
         contentTypeId=content_type_id,
         areaCode=area_code,
     )
+
+
+def get_area_based_count(content_type_id: str, area_code: str) -> int:
+    """지역+타입 기준 전체 건수만 저비용으로 조회한다 (numOfRows=1, list 콜 1건).
+    배치 실행 전 규모 산정용 - 상세 콜(시설당 2~3콜)을 전혀 쓰지 않는다."""
+    body = _request_body(
+        KOR_SERVICE_BASE,
+        "areaBasedList2",
+        arrange="A",
+        numOfRows=1,
+        pageNo=1,
+        contentTypeId=content_type_id,
+        areaCode=area_code,
+    )
+    return int(body.get("totalCount", 0))
