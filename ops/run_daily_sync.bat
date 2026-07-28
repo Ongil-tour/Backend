@@ -12,7 +12,7 @@ set LOG_FILE=%PROJECT_DIR%\logs\sync_facilities.log
 cd /d "%PROJECT_DIR%"
 
 echo ==== %date% %time% ==== >> "%LOG_FILE%"
-docker compose run --rm api python -m app.scripts.sync_facilities >> "%LOG_FILE%" 2>&1
+docker compose run --rm api python -u -m app.scripts.sync_facilities >> "%LOG_FILE%" 2>&1
 echo exit code %errorlevel% >> "%LOG_FILE%"
 
 endlocal
