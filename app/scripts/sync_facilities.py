@@ -140,6 +140,12 @@ def sync(area_codes: list[str], content_types: dict[str, str], force: bool = Fal
                     print(f"[{area_name}/{category}] 쿼터 초과로 중단: {e}")
                     quota_exceeded = True
                     break
+                except Exception as e:
+                    # 목록 페이지네이션(_iter_area_content_items) 중 발생한, 쿼터와 무관한
+                    # 예외(재시도로도 못 넘긴 네트워크 오류 등). 무인 배치라 이 그룹만 포기하고
+                    # 다음 지역/타입으로 넘어간다 - 여기서 전체를 죽이면 하루치가 통째로 날아간다.
+                    print(f"[{area_name}/{category}] 목록 조회 실패로 건너뜀: {e}")
+                    continue
                 print(f"[{area_name}/{category}] 신규 {new_in_group}건 적재")
     finally:
         db.close()

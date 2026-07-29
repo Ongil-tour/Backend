@@ -54,13 +54,15 @@ _QUOTA_EXCEEDED_RESULT_CODES = {"22"}
 
 
 def _get_with_retry(url: str, params: dict) -> httpx.Response:
-    """TourAPI가 가끔 응답을 10초 넘게 끄는 경우가 있어(쿼터 초과와 무관한 단순 지연),
-    타임아웃/연결 오류에 한해 지수 백오프로 재시도한다."""
+    """TourAPI가 가끔 응답을 10초 넘게 끌거나(단순 지연), 컨테이너 네트워크가 일시적으로
+    DNS/연결 오류를 내는 경우가 있어 - 쿼터 초과와 무관한 전송 레벨 오류 전반에 대해
+    지수 백오프로 재시도한다. httpx.TransportError가 TimeoutException/ConnectError 등을
+    전부 포괄하는 상위 클래스."""
     last_error: Exception | None = None
     for attempt in range(_MAX_RETRIES):
         try:
             return httpx.get(url, params=params, timeout=20.0)
-        except httpx.TimeoutException as e:
+        except httpx.TransportError as e:
             last_error = e
             if attempt < _MAX_RETRIES - 1:
                 time.sleep(_RETRY_BACKOFF_S * (2**attempt))
