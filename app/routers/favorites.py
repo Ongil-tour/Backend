@@ -1,70 +1,145 @@
-"""
-Favorites 라우터 (담당: 신지민) - 총 5개 엔드포인트.
-favorite_lists는 list_type(FREQUENT/WISHLIST/VISITED)만 갖는 3개 고정 리스트,
-favorites는 facility_id FK 참조로 정규화됨 (확정 스키마 기준).
-DB 쓰기는 저장 시점에만 발생 (조회는 프론트 메모리 캐시 활용).
-"""
-import uuid
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Response,
+    status,
+)
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.crud.favorite import (
+    create_custom_favorite_list,
+    create_favorite,
+    delete_custom_favorite_list,
+    delete_favorite,
+    get_facility_by_id,
+    get_favorite_by_id,
+    get_favorite_by_list_and_facility,
+    get_favorite_list_by_id,
+    get_favorite_list_by_name,
+    get_favorite_lists_by_user,
+    get_favorite_status,
+    get_favorites_by_list,
+    update_custom_favorite_list,
+)
 from app.core.database import get_db
-from app.crud import favorite as favorite_crud
 from app.deps import get_current_user_mock
+from app.models.favorite import ListType
 from app.models.user import User
 from app.schemas.favorite import (
     FavoriteCreate,
+    FavoriteListCreate,
     FavoriteListRead,
+    FavoriteListUpdate,
     FavoriteRead,
     FavoriteStatusRead,
 )
 
-router = APIRouter(prefix="/favorites", tags=["favorites"])
+
+router = APIRouter(
+    prefix="/favorites",
+    tags=["favorites"],
+)
 
 
 @router.get(
     "/lists",
     response_model=list[FavoriteListRead],
     status_code=status.HTTP_200_OK,
-    summary="내 즐겨찾기 목록 조회",
-    description="현재 사용자의 고정 즐겨찾기 목록 3개를 조회합니다.",
 )
-def get_my_favorite_lists(
-    current_user: User = Depends(get_current_user_mock),
+def read_favorite_lists(
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        get_current_user_mock
+    ),
 ):
-    return favorite_crud.get_favorite_lists_by_user(
+    """
+    현재 사용자의 기본 목록과 사용자 지정 목록을 모두 조회한다.
+    """
+    return get_favorite_lists_by_user(
         db=db,
         user_id=current_user.id,
     )
+
+
+@router.post(
+    "/lists",
+    response_model=FavoriteListRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_favorite_list(
+    payload: FavoriteListCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        get_current_user_mock
+    ),
+):
+    """
+    사용자 지정 즐겨찾기 목록을 생성한다.
+    """
+    name = payload.name.strip()
+
+    existing_list = get_favorite_list_by_name(
+        db=db,
+        user_id=current_user.id,
+        name=name,
+    )
+
+    if existing_list is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "같은 이름의 즐겨찾기 목록이 "
+                "이미 존재합니다."
+            ),
+        )
+
+    try:
+        favorite_list = create_custom_favorite_list(
+            db=db,
+            user_id=current_user.id,
+            name=name,
+        )
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "같은 이름의 즐겨찾기 목록이 "
+                "이미 존재합니다."
+            ),
+        )
+
+    return {
+        "id": favorite_list.id,
+        "list_type": favorite_list.list_type,
+        "name": favorite_list.name,
+        "created_at": favorite_list.created_at,
+        "favorite_count": 0,
+    }
 
 
 @router.get(
     "/lists/{list_id}",
     response_model=list[FavoriteRead],
     status_code=status.HTTP_200_OK,
-    summary="특정 즐겨찾기 리스트 조회",
-    description="현재 사용자의 특정 즐겨찾기 리스트에 저장된 항목을 조회합니다.",
-    responses={
-        404: {
-            "description": "즐겨찾기 리스트를 찾을 수 없음",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "즐겨찾기 리스트를 찾을 수 없습니다."
-                    }
-                }
-            },
-        }
-    },
 )
-def get_favorite_list_items(
-    list_id: uuid.UUID,
-    current_user: User = Depends(get_current_user_mock),
+def read_favorites_in_list(
+    list_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        get_current_user_mock
+    ),
 ):
-    favorite_list = favorite_crud.get_favorite_list_by_id(
+    """
+    특정 즐겨찾기 목록에 들어 있는 항목을 조회한다.
+    """
+    favorite_list = get_favorite_list_by_id(
         db=db,
         user_id=current_user.id,
         list_id=list_id,
@@ -73,44 +148,156 @@ def get_favorite_list_items(
     if favorite_list is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="즐겨찾기 리스트를 찾을 수 없습니다.",
+            detail="즐겨찾기 목록을 찾을 수 없습니다.",
         )
 
-    return favorite_crud.get_favorites_by_list(
+    return get_favorites_by_list(
         db=db,
         user_id=current_user.id,
         list_id=list_id,
     )
 
 
+@router.patch(
+    "/lists/{list_id}",
+    response_model=FavoriteListRead,
+    status_code=status.HTTP_200_OK,
+)
+def update_favorite_list(
+    list_id: UUID,
+    payload: FavoriteListUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        get_current_user_mock
+    ),
+):
+    """
+    사용자 지정 즐겨찾기 목록 이름을 변경한다.
+    """
+    favorite_list = get_favorite_list_by_id(
+        db=db,
+        user_id=current_user.id,
+        list_id=list_id,
+    )
+
+    if favorite_list is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="즐겨찾기 목록을 찾을 수 없습니다.",
+        )
+
+    if favorite_list.list_type != ListType.CUSTOM:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="기본 즐겨찾기 목록은 수정할 수 없습니다.",
+        )
+
+    new_name = payload.name.strip()
+
+    duplicate_list = get_favorite_list_by_name(
+        db=db,
+        user_id=current_user.id,
+        name=new_name,
+    )
+
+    if (
+        duplicate_list is not None
+        and duplicate_list.id != favorite_list.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "같은 이름의 즐겨찾기 목록이 "
+                "이미 존재합니다."
+            ),
+        )
+
+    try:
+        updated_list = update_custom_favorite_list(
+            db=db,
+            favorite_list=favorite_list,
+            name=new_name,
+        )
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "같은 이름의 즐겨찾기 목록이 "
+                "이미 존재합니다."
+            ),
+        )
+
+    return {
+        "id": updated_list.id,
+        "list_type": updated_list.list_type,
+        "name": updated_list.name,
+        "created_at": updated_list.created_at,
+        "favorite_count": len(updated_list.favorites),
+    }
+
+
+@router.delete(
+    "/lists/{list_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_favorite_list(
+    list_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        get_current_user_mock
+    ),
+):
+    """
+    사용자 지정 즐겨찾기 목록을 삭제한다.
+
+    기본 목록은 삭제할 수 없다.
+    """
+    favorite_list = get_favorite_list_by_id(
+        db=db,
+        user_id=current_user.id,
+        list_id=list_id,
+    )
+
+    if favorite_list is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="즐겨찾기 목록을 찾을 수 없습니다.",
+        )
+
+    if favorite_list.list_type != ListType.CUSTOM:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="기본 즐겨찾기 목록은 삭제할 수 없습니다.",
+        )
+
+    delete_custom_favorite_list(
+        db=db,
+        favorite_list=favorite_list,
+    )
+
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT
+    )
+
 @router.post(
     "",
     response_model=FavoriteRead,
     status_code=status.HTTP_201_CREATED,
-    summary="즐겨찾기 추가",
-    description="시설을 현재 사용자의 특정 즐겨찾기 리스트에 추가합니다.",
-    responses={
-        404: {
-            "description": "시설 또는 즐겨찾기 리스트를 찾을 수 없음"
-        },
-        409: {
-            "description": "같은 리스트에 이미 저장된 시설",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "이미 해당 리스트에 저장된 시설입니다."
-                    }
-                }
-            },
-        },
-    },
 )
 def add_favorite(
     payload: FavoriteCreate,
-    current_user: User = Depends(get_current_user_mock),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_mock),
 ):
-    favorite_list = favorite_crud.get_favorite_list_by_id(
+    """
+    시설을 특정 즐겨찾기 목록에 저장한다.
+    """
+
+    # 1. 현재 사용자가 소유한 목록인지 확인
+    favorite_list = get_favorite_list_by_id(
         db=db,
         user_id=current_user.id,
         list_id=payload.list_id,
@@ -119,10 +306,11 @@ def add_favorite(
     if favorite_list is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="즐겨찾기 리스트를 찾을 수 없습니다.",
+            detail="즐겨찾기 목록을 찾을 수 없습니다.",
         )
 
-    facility = favorite_crud.get_facility_by_id(
+    # 2. 실제로 존재하는 시설인지 확인
+    facility = get_facility_by_id(
         db=db,
         facility_id=payload.facility_id,
     )
@@ -133,50 +321,51 @@ def add_favorite(
             detail="시설을 찾을 수 없습니다.",
         )
 
-    existing_favorite = favorite_crud.get_existing_favorite(
+    # 3. 같은 목록에 같은 시설이 이미 저장됐는지 확인
+    existing_favorite = get_favorite_by_list_and_facility(
         db=db,
         list_id=payload.list_id,
         facility_id=payload.facility_id,
     )
 
+    # 조회 결과가 실제로 존재할 때만 409
     if existing_favorite is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="이미 해당 리스트에 저장된 시설입니다.",
+            detail="해당 시설은 이미 이 목록에 저장되어 있습니다.",
         )
 
-    return favorite_crud.create_favorite(
-        db=db,
-        user_id=current_user.id,
-        facility_id=payload.facility_id,
-        list_id=payload.list_id,
+    # 4. 새 즐겨찾기 저장
+    try:
+        favorite = create_favorite(
+            db=db,
+            user_id=current_user.id,
+            list_id=payload.list_id,
+            facility_id=payload.facility_id,
     )
+        return favorite
+    except IntegrityError:
+        db.rollback()
 
-
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="해당 시설은 이미 이 목록에 저장되어 있습니다.",
+        )
 @router.delete(
     "/{favorite_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="즐겨찾기 삭제",
-    description="현재 사용자의 즐겨찾기 항목을 삭제합니다.",
-    responses={
-        404: {
-            "description": "즐겨찾기 항목을 찾을 수 없음",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "즐겨찾기를 찾을 수 없습니다."
-                    }
-                }
-            },
-        }
-    },
 )
 def remove_favorite(
-    favorite_id: uuid.UUID,
-    current_user: User = Depends(get_current_user_mock),
+    favorite_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        get_current_user_mock
+    ),
 ):
-    favorite = favorite_crud.get_favorite_by_id(
+    """
+    즐겨찾기 항목을 삭제한다.
+    """
+    favorite = get_favorite_by_id(
         db=db,
         user_id=current_user.id,
         favorite_id=favorite_id,
@@ -185,42 +374,35 @@ def remove_favorite(
     if favorite is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="즐겨찾기를 찾을 수 없습니다.",
+            detail="즐겨찾기 항목을 찾을 수 없습니다.",
         )
 
-    favorite_crud.delete_favorite(
+    delete_favorite(
         db=db,
         favorite=favorite,
     )
 
-    return None
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT
+    )
 
 
 @router.get(
-    "/{facility_id}/status",
+    "/status",
     response_model=FavoriteStatusRead,
     status_code=status.HTTP_200_OK,
-    summary="시설 즐겨찾기 상태 조회",
-    description="특정 시설이 현재 사용자의 어느 즐겨찾기 리스트에 저장되어 있는지 확인합니다.",
-    responses={
-        404: {
-            "description": "시설을 찾을 수 없음",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "시설을 찾을 수 없습니다."
-                    }
-                }
-            },
-        }
-    },
 )
-def check_favorite_status(
-    facility_id: uuid.UUID,
-    current_user: User = Depends(get_current_user_mock),
+def read_favorite_status(
+    facility_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        get_current_user_mock
+    ),
 ):
-    facility = favorite_crud.get_facility_by_id(
+    """
+    특정 시설이 즐겨찾기에 저장되어 있는지 조회한다.
+    """
+    facility = get_facility_by_id(
         db=db,
         facility_id=facility_id,
     )
@@ -231,15 +413,13 @@ def check_favorite_status(
             detail="시설을 찾을 수 없습니다.",
         )
 
-    favorites = favorite_crud.get_favorites_by_facility(
+    favorite_list_ids = get_favorite_status(
         db=db,
         user_id=current_user.id,
         facility_id=facility_id,
     )
 
-    return {
-        "is_favorite": len(favorites) > 0,
-        "favorite_list_ids": [
-            favorite.list_id for favorite in favorites
-        ],
-    }
+    return FavoriteStatusRead(
+        is_favorite=len(favorite_list_ids) > 0,
+        favorite_list_ids=favorite_list_ids,
+    )
