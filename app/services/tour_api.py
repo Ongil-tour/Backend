@@ -13,9 +13,14 @@ TourAPI(한국관광공사) 클라이언트.
   boolean이 아니라 자유서술 텍스트다(값 있으면 문자열, 없으면 ""). wheelchair_accessible은
   전용 필드가 없고 route/exit 텍스트 서술 여부로 판단한다(app/services/facility_sync.py 참고).
 """
+import time
+
 import httpx
 
 from app.core.config import settings
+
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_S = 2.0
 
 KOR_SERVICE_BASE = "https://apis.data.go.kr/B551011/KorService2"
 KOR_WITH_SERVICE_BASE = "https://apis.data.go.kr/B551011/KorWithService2"
@@ -40,20 +45,64 @@ class TourApiError(RuntimeError):
     pass
 
 
-def _request_items(base_url: str, operation: str, **params):
-    resp = httpx.get(
+class TourApiQuotaExceededError(TourApiError):
+    """일일/트래픽 쿼터 초과로 API가 더 이상 정상 응답하지 않는 상태."""
+
+
+# data.go.kr 공통 에러코드 중 쿼터/트래픽 관련. 22 = LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR.
+_QUOTA_EXCEEDED_RESULT_CODES = {"22"}
+
+
+def _get_with_retry(url: str, params: dict) -> httpx.Response:
+    """TourAPI가 가끔 응답을 10초 넘게 끌거나(단순 지연), 컨테이너 네트워크가 일시적으로
+    DNS/연결 오류를 내는 경우가 있어 - 쿼터 초과와 무관한 전송 레벨 오류 전반에 대해
+    지수 백오프로 재시도한다. httpx.TransportError가 TimeoutException/ConnectError 등을
+    전부 포괄하는 상위 클래스."""
+    last_error: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return httpx.get(url, params=params, timeout=20.0)
+        except httpx.TransportError as e:
+            last_error = e
+            if attempt < _MAX_RETRIES - 1:
+                time.sleep(_RETRY_BACKOFF_S * (2**attempt))
+    raise last_error
+
+
+def _request_body(base_url: str, operation: str, **params) -> dict:
+    """공통 응답 검증 후 body 전체(items뿐 아니라 totalCount 등)를 반환한다."""
+    resp = _get_with_retry(
         f"{base_url}/{operation}",
         params={"serviceKey": settings.TOUR_API_KEY, **_COMMON_PARAMS, **params},
-        timeout=10.0,
     )
-    resp.raise_for_status()
-    data = resp.json()
-    header = data["response"]["header"]
+    if resp.status_code == 429:
+        # 게이트웨이 레벨 트래픽 제한(초당/일일 호출 한도 초과)도 쿼터 초과로 취급한다.
+        # raise_for_status()에 맡기면 일반 Exception(HTTPStatusError)이 되어 배치가
+        # 이걸 "이 항목만 실패"로 오인하고 남은 수천 건에 계속 429를 날리며 헛돈다.
+        raise TourApiQuotaExceededError(f"{operation}: 429 Too Many Requests (트래픽/쿼터 초과)")
+    if resp.status_code >= 400:
+        # httpx의 기본 메시지는 serviceKey가 담긴 전체 URL을 그대로 노출하므로
+        # (배치 실패 로그에 API 키가 평문으로 수천 줄 남는다), 직접 sanitize해서 던진다.
+        raise TourApiError(f"{operation}: HTTP {resp.status_code} {resp.reason_phrase}")
+    try:
+        data = resp.json()
+    except ValueError:
+        # 쿼터를 넘기면 게이트웨이가 _type=json을 무시하고 XML 에러 페이지를 내려준다.
+        raise TourApiQuotaExceededError(
+            f"{operation}: 쿼터 초과로 추정되는 비-JSON 응답: {resp.text[:200]!r}"
+        )
 
+    header = data["response"]["header"]
+    if header["resultCode"] in _QUOTA_EXCEEDED_RESULT_CODES:
+        raise TourApiQuotaExceededError(f"{operation}({params}): {header['resultMsg']}")
     if header["resultCode"] not in ("0000", "03"):  # 03 = NODATA_ERROR (해당 데이터 없음)
         raise TourApiError(f"{operation}({params}) failed: {header['resultMsg']}")
 
-    return data["response"]["body"]["items"]
+    return data["response"]["body"]
+
+
+def _request_items(base_url: str, operation: str, **params):
+    return _request_body(base_url, operation, **params)["items"]
 
 
 def _get(base_url: str, operation: str, **params) -> dict:
@@ -99,3 +148,18 @@ def get_area_based_list(content_type_id: str, area_code: str, num_of_rows: int =
         contentTypeId=content_type_id,
         areaCode=area_code,
     )
+
+
+def get_area_based_count(content_type_id: str, area_code: str) -> int:
+    """지역+타입 기준 전체 건수만 저비용으로 조회한다 (numOfRows=1, list 콜 1건).
+    배치 실행 전 규모 산정용 - 상세 콜(시설당 2~3콜)을 전혀 쓰지 않는다."""
+    body = _request_body(
+        KOR_SERVICE_BASE,
+        "areaBasedList2",
+        arrange="A",
+        numOfRows=1,
+        pageNo=1,
+        contentTypeId=content_type_id,
+        areaCode=area_code,
+    )
+    return int(body.get("totalCount", 0))
