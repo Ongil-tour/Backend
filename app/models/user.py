@@ -21,9 +21,25 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
-    social_accounts: Mapped[list["SocialAccount"]] = relationship(back_populates="user")
-    settings: Mapped["UserSettings"] = relationship(back_populates="user", uselist=False)
-    favorite_lists: Mapped[list["FavoriteList"]] = relationship(back_populates="user")
+    # cascade와 passive_deletes 옵션 추가
+    social_accounts: Mapped[list["SocialAccount"]] = relationship(
+        back_populates="user",
+        cascade="all, delete",
+        passive_deletes=True
+    )
+    
+    settings: Mapped["UserSettings"] = relationship(
+        back_populates="user", 
+        uselist=False,
+        cascade="all, delete",
+        passive_deletes=True
+    )
+    
+    favorite_lists: Mapped[list["FavoriteList"]] = relationship(
+        back_populates="user",
+        cascade="all, delete",
+        passive_deletes=True
+    )
 
 
 class SocialAccount(Base):
