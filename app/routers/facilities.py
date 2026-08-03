@@ -11,13 +11,13 @@ from sqlalchemy.orm import Session
 from app.crud import facility as facility_crud
 from app.core.database import get_db
 from app.schemas.facility import (
+    BarrierFreeInfoRead,
     FacilityMatchResult,
     FacilityRead,
     FacilitySummary,
     MatchByLocationRequest,
     MatchByLocationResponse,
 )
-
 router = APIRouter(prefix="/facilities", tags=["facilities"])
 
 
@@ -67,4 +67,23 @@ def get_facility_detail(facility_id: uuid.UUID, db: Session = Depends(get_db)):
     facility = facility_crud.get_facility(db, facility_id)
     if facility is None:
         raise HTTPException(status_code=404, detail="facility not found")
+    return facility
+
+@router.get(
+    "/{facility_id}/barrier-free",
+    response_model=BarrierFreeInfoRead,
+)
+def get_barrier_free_info(
+    facility_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    """시설 ID를 기준으로 배리어프리 정보 6종을 조회한다."""
+    facility = facility_crud.get_facility(db, facility_id)
+
+    if facility is None:
+        raise HTTPException(
+            status_code=404,
+            detail="facility not found",
+        )
+
     return facility
