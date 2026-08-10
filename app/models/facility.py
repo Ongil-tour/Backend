@@ -6,7 +6,7 @@ bounding box 또는 Haversine 공식으로 처리한다 (라우터 구현 시 �
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Float, Boolean, DateTime, Index, func, text
+from sqlalchemy import String, Float, Boolean, DateTime, Index, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,12 +29,12 @@ class Facility(Base):
     address: Mapped[str | None] = mapped_column(String(255), nullable=True)
     lat: Mapped[float] = mapped_column(Float, nullable=False)
     lng: Mapped[float] = mapped_column(Float, nullable=False)
-    operating_hours: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    operating_hours: Mapped[str | None] = mapped_column(Text, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
-    # 한국관광공사 무장애 정보 (6종 확정)
+    # 한국관광공사 무장애 정보 (6종 확정). ramp는 wheelchair_accessible과 의미가 겹쳐(휠체어 경사로) 제거하고
+    # 휠체어 접근 가능 여부 하나로 통합했다.
     wheelchair_accessible: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))
-    ramp: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))
     disabled_restroom: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))
     disabled_parking: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))
     elevator: Mapped[bool | None] = mapped_column(Boolean, server_default=text("false"))

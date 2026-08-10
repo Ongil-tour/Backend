@@ -10,7 +10,7 @@ from app.deps import get_current_user_mock, get_db
 from app.models.user import User
 from app.schemas.user import UserRead, UserSettingsRead, UserSettingsUpdate
 
-from app.crud import user as crud_user 
+from app.crud import user as crud_user
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -27,19 +27,18 @@ def get_my_profile(current_user: User = Depends(get_current_user_mock)):
 
 @router.patch("/me", response_model=UserSettingsRead)
 def update_my_settings(
-    payload: UserSettingsUpdate, 
+    payload: UserSettingsUpdate,
     current_user: User = Depends(get_current_user_mock),
-    db: Session = Depends(get_db)  # DB 수정을 위해 세션을 가져옵니다.
+    db: Session = Depends(get_db)
 ):
     """
     내 설정 변경 (무장애 UI 설정):
     앱에서 보낸 고대비/폰트크기 변경 요청(payload)을 CRUD 함수로 넘겨서 DB를 수정합니다.
     """
-    # crud 파일에서 변경한 이름(upsert_user_settings)에 맞게 호출
     updated_settings = crud_user.upsert_user_settings(db=db, user_id=current_user.id, update_data=payload)
     return updated_settings
 
-# status_code=204 로 명시
+
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 def delete_me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user_mock)):
     crud_user.delete_user(db=db, user_id=current_user.id)

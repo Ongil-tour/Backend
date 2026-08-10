@@ -6,6 +6,7 @@ from app.schemas.user import UserSettingsUpdate
 
 # 1. 이메일로 유저 찾기 함수
 def get_user_by_email(db: Session, email: str):
+    # DB의 User 테이블에서 email 필드가 전달받은 email과 같은 첫 번째 데이터를 가져옴
     return db.query(User).filter(User.email == email).first()
 
 # 2. 고유 ID(UUID)로 유저 찾기 함수
@@ -24,9 +25,9 @@ def upsert_user_settings(db: Session, user_id: uuid.UUID, update_data: UserSetti
 
     # (2) 기존 설정 데이터 찾기
     db_settings = get_user_settings(db, user_id)
-    
+
     # (3) 클라이언트가 '실제로 값을 넣어서 보낸 필드'만 딕셔너리로 추출 (exclude_unset=True)
-    update_dict = update_data.model_dump(exclude_unset=True) 
+    update_dict = update_data.model_dump(exclude_unset=True)
 
     if db_settings:
         # (4) [Upsert: 갱신] 데이터가 이미 있으면 뽑아낸 값을 덮어씌우기
@@ -36,17 +37,21 @@ def upsert_user_settings(db: Session, user_id: uuid.UUID, update_data: UserSetti
         # (5) [Upsert: 생성] 데이터가 없으면 추출한 값으로 새로 생성하기
         db_settings = UserSettings(user_id=user_id, **update_dict)
         db.add(db_settings)
-        
+
     db.commit()
     db.refresh(db_settings)
-    
+
     return db_settings
 
 # 5. 유저 탈퇴 (삭제) 함수
 def delete_user(db: Session, user_id: uuid.UUID):
     db_user = db.query(User).filter(User.id == user_id).first()
-    if db_user:
-        db.delete(db_user)
-        db.commit()
+    if not db_user:
+        return None
 
-    return None
+    # ondelete="CASCADE" 설정 덕분에 user_settings, social_accounts,
+    # favorite_lists, refresh_tokens는 DB가 알아서 같이 지워줌
+    db.delete(db_user)
+    db.commit()
+
+    return db_user
