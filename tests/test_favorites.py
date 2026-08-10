@@ -346,34 +346,179 @@ def test_favorite_count_increases_after_adding_items():
         delete_test_facilities(facility_ids)
 
 
-def test_favorite_status_after_adding_facility():
-    favorite_list = get_basic_favorite_list()
-    list_id = favorite_list["id"]
+def test_favorite_status_before_after_and_multiple_lists():
+    favorite_lists = [
+        item
+        for item in get_favorite_lists()
+        if item["list_type"]
+        in {
+            "FREQUENT",
+            "WISHLIST",
+            "VISITED",
+        }
+    ]
+
+    assert len(favorite_lists) >= 2
+
+    first_list_id = favorite_lists[0]["id"]
+    second_list_id = favorite_lists[1]["id"]
 
     facility_ids = create_test_facilities(1)
     facility_id = facility_ids[0]
 
     try:
-        create_response = create_favorite(
-            list_id=list_id,
-            facility_id=facility_id,
-        )
-
-        assert create_response.status_code == 201
-
-        status_response = client.get(
+        # 1. 저장 전에는 즐겨찾기 상태가 false
+        before_response = client.get(
             "/favorites/status",
             params={
                 "facility_id": facility_id,
             },
         )
 
-        assert status_response.status_code == 200
+        assert before_response.status_code == 200
 
-        data = status_response.json()
+        before_data = before_response.json()
 
-        assert data["is_favorite"] is True
-        assert list_id in data["favorite_list_ids"]
+        assert before_data["is_favorite"] is False
+        assert before_data["favorite_list_ids"] == []
+
+        # 2. 첫 번째 목록에 저장
+        first_create_response = create_favorite(
+            list_id=first_list_id,
+            facility_id=facility_id,
+        )
+
+        assert first_create_response.status_code in (
+            200,
+            201,
+        )
+
+        after_first_response = client.get(
+            "/favorites/status",
+            params={
+                "facility_id": facility_id,
+            },
+        )
+
+        assert after_first_response.status_code == 200
+
+        after_first_data = after_first_response.json()
+
+        assert after_first_data["is_favorite"] is True
+        assert (
+            first_list_id
+            in after_first_data["favorite_list_ids"]
+        )
+
+        # 3. 같은 시설을 두 번째 목록에도 저장
+        second_create_response = create_favorite(
+            list_id=second_list_id,
+            facility_id=facility_id,
+        )
+
+        assert second_create_response.status_code in (
+            200,
+            201,
+        )
+
+        after_second_response = client.get(
+            "/favorites/status",
+            params={
+                "facility_id": facility_id,
+            },
+        )
+
+        assert after_second_response.status_code == 200
+
+        after_second_data = after_second_response.json()
+
+        assert after_second_data["is_favorite"] is True
+
+        assert set(
+            after_second_data["favorite_list_ids"]
+        ) >= {
+            first_list_id,
+            second_list_id,
+        }
+
+    finally:
+        delete_test_facilities(facility_ids)
+
+
+def test_favorite_status_with_nonexistent_facility_returns_404():
+    nonexistent_facility_id = str(uuid.uuid4())
+
+    response = client.get(
+        "/favorites/status",
+        params={
+            "facility_id": nonexistent_facility_id,
+        },
+    )
+
+    assert response.status_code == 404
+    assert (
+        response.json()["detail"]
+        == "시설을 찾을 수 없습니다."
+    )
+
+def test_same_facility_can_be_saved_to_different_lists():
+    favorite_lists = [
+        item
+        for item in get_favorite_lists()
+        if item["list_type"]
+        in {
+            "FREQUENT",
+            "WISHLIST",
+            "VISITED",
+        }
+    ]
+
+    assert len(favorite_lists) >= 2
+
+    first_list_id = favorite_lists[0]["id"]
+    second_list_id = favorite_lists[1]["id"]
+
+    facility_ids = create_test_facilities(1)
+    facility_id = facility_ids[0]
+
+    try:
+        first_response = create_favorite(
+            list_id=first_list_id,
+            facility_id=facility_id,
+        )
+
+        assert first_response.status_code in (
+            200,
+            201,
+        ), first_response.text
+
+        second_response = create_favorite(
+            list_id=second_list_id,
+            facility_id=facility_id,
+        )
+
+        assert second_response.status_code in (
+            200,
+            201,
+        ), second_response.text
+
+        assert (
+            first_response.json()["facility_id"]
+            == facility_id
+        )
+        assert (
+            second_response.json()["facility_id"]
+            == facility_id
+        )
+
+        assert (
+            first_response.json()["list_id"]
+            == first_list_id
+        )
+        assert (
+            second_response.json()["list_id"]
+            == second_list_id
+        )
 
     finally:
         delete_test_facilities(facility_ids)
