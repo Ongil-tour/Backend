@@ -72,13 +72,14 @@ class UserSettings(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     high_contrast: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
-    font_size: Mapped[str] = mapped_column(String(10), nullable=False, server_default=text("'md'"))  # 'sm'|'md'|'lg'
+    font_size: Mapped[str] = mapped_column(String(10), nullable=False, server_default=text("'md'"))
+    dark_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    profile_image: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'avatar_1'"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
     user: Mapped["User"] = relationship(back_populates="settings")
-
 
 class RefreshToken(Base):
     """Rolling refresh token 저장용 (멀티 디바이스 지원, 1 user : N)."""

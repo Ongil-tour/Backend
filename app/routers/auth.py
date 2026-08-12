@@ -1,28 +1,100 @@
 """
 Auth 라우터 (담당: 이다영) - 총 3개 엔드포인트 확정.
 소셜 로그인은 signup/login 구분 없이 provider callback 하나로 통일.
-아래는 merge 순서(auth-users 우선)를 위한 스텁이며, 실제 로직은 담당자가 채운다.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Body, Depends, HTTPException
+from sqlalchemy.orm import Session
+from datetime import datetime, timedelta, timezone
 
+from app.deps import get_db
 from app.schemas.user import TokenPair
+from app.crud import auth as crud_auth
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    REFRESH_TOKEN_EXPIRE_DAYS,
+)
+from app.services.oauth import get_google_access_token, get_google_user_info
+from jose import JWTError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/{provider}/callback", response_model=TokenPair)
-def oauth_callback(provider: str, code: str):
-    """카카오/구글/네이버 OAuth 콜백. 최초 로그인 시 회원가입까지 겸함. TODO: 구현."""
-    raise NotImplementedError
+async def oauth_callback(provider: str, code: str, db: Session = Depends(get_db)):
+    """카카오/구글/네이버 OAuth 콜백. 최초 로그인 시 회원가입까지 겸함."""
+    # 지금은 구글만 지원 (카카오/네이버는 나중에 추가)
+    if provider != "google":
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 provider: {provider}")
+
+    # 1. code -> 구글 access token 교환
+    google_access_token = await get_google_access_token(code)
+
+    # 2. 구글 access token -> 사용자 정보(email) 조회
+    google_user = await get_google_user_info(google_access_token)
+
+    # 3. 이미 가입된 계정인지 확인
+    social_account = crud_auth.get_social_account(
+        db, provider=provider, provider_user_id=google_user["provider_user_id"]
+    )
+
+    if social_account:
+        # 기존 유저 -> 로그인
+        user_id = social_account.user_id
+    else:
+        # 처음 로그인하는 유저 -> 회원가입 겸용
+        new_user = crud_auth.create_user_with_social_account(
+            db,
+            email=google_user["email"],
+            provider=provider,
+            provider_user_id=google_user["provider_user_id"],
+        )
+        user_id = new_user.id
+
+    # 4. 우리 서비스만의 JWT 발급
+    access_token = create_access_token(user_id)
+    refresh_token_str = create_refresh_token(user_id)
+
+    # 5. refresh token은 DB에 저장 (로그아웃 시 여기서 지움)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    crud_auth.save_refresh_token(db, user_id=user_id, token=refresh_token_str, expires_at=expires_at)
+
+    return TokenPair(access_token=access_token, refresh_token=refresh_token_str)
 
 
 @router.post("/refresh", response_model=TokenPair)
-def refresh_token(refresh_token: str):
-    """rolling refresh token 재발급. TODO: 구현."""
-    raise NotImplementedError
+def refresh_token(refresh_token: str = Body(..., embed=True), db: Session = Depends(get_db)):
+    """rolling refresh token 재발급."""
+    # 1. JWT 자체가 유효한지 확인 (서명 위조/만료 여부)
+    try:
+        payload = decode_token(refresh_token)
+    except JWTError:
+        raise HTTPException(status_code=401, detail="유효하지 않은 토큰입니다.")
+
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="refresh token이 아닙니다.")
+
+    # 2. DB에도 살아있는 토큰인지 확인 (로그아웃해서 지워진 건 아닌지)
+    db_token = crud_auth.get_valid_refresh_token(db, refresh_token)
+    if db_token is None:
+        raise HTTPException(status_code=401, detail="만료되었거나 폐기된 토큰입니다.")
+
+    user_id = db_token.user_id
+
+    # 3. rolling 방식: 기존 토큰은 폐기하고 새로 발급
+    crud_auth.delete_refresh_token(db, refresh_token)
+
+    new_access_token = create_access_token(user_id)
+    new_refresh_token = create_refresh_token(user_id)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    crud_auth.save_refresh_token(db, user_id=user_id, token=new_refresh_token, expires_at=expires_at)
+
+    return TokenPair(access_token=new_access_token, refresh_token=new_refresh_token)
 
 
 @router.post("/logout")
-def logout():
-    """refresh token 폐기(Redis/DB). TODO: 구현."""
-    raise NotImplementedError
+def logout(refresh_token: str = Body(..., embed=True), db: Session = Depends(get_db)):
+    """refresh token 폐기."""
+    crud_auth.delete_refresh_token(db, refresh_token)
+    return {"detail": "로그아웃 되었습니다."}
