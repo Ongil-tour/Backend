@@ -15,7 +15,11 @@ from app.core.security import (
     decode_token,
     REFRESH_TOKEN_EXPIRE_DAYS,
 )
-from app.services.oauth import get_google_access_token, get_google_user_info
+from app.services.oauth import (
+    get_google_access_token, get_google_user_info,
+    get_kakao_access_token, get_kakao_user_info,
+    get_naver_access_token, get_naver_user_info,
+)
 from jose import JWTError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -24,19 +28,22 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/{provider}/callback", response_model=TokenPair)
 async def oauth_callback(provider: str, code: str, db: Session = Depends(get_db)):
     """카카오/구글/네이버 OAuth 콜백. 최초 로그인 시 회원가입까지 겸함."""
-    # 지금은 구글만 지원 (카카오/네이버는 나중에 추가)
-    if provider != "google":
+    # 1. provider별로 다른 방식으로 code -> access token -> 사용자 정보 획득
+    if provider == "google":
+        provider_access_token = await get_google_access_token(code)
+        provider_user = await get_google_user_info(provider_access_token)
+    elif provider == "kakao":
+        provider_access_token = await get_kakao_access_token(code)
+        provider_user = await get_kakao_user_info(provider_access_token)
+    elif provider == "naver":
+        provider_access_token = await get_naver_access_token(code)
+        provider_user = await get_naver_user_info(provider_access_token)
+    else:
         raise HTTPException(status_code=400, detail=f"지원하지 않는 provider: {provider}")
 
-    # 1. code -> 구글 access token 교환
-    google_access_token = await get_google_access_token(code)
-
-    # 2. 구글 access token -> 사용자 정보(email) 조회
-    google_user = await get_google_user_info(google_access_token)
-
-    # 3. 이미 가입된 계정인지 확인
+    # 2. 이미 가입된 계정인지 확인 (이후 로직은 provider와 상관없이 공통)
     social_account = crud_auth.get_social_account(
-        db, provider=provider, provider_user_id=google_user["provider_user_id"]
+        db, provider=provider, provider_user_id=provider_user["provider_user_id"]
     )
 
     if social_account:
@@ -46,17 +53,17 @@ async def oauth_callback(provider: str, code: str, db: Session = Depends(get_db)
         # 처음 로그인하는 유저 -> 회원가입 겸용
         new_user = crud_auth.create_user_with_social_account(
             db,
-            email=google_user["email"],
+            email=provider_user["email"],
             provider=provider,
-            provider_user_id=google_user["provider_user_id"],
+            provider_user_id=provider_user["provider_user_id"],
         )
         user_id = new_user.id
 
-    # 4. 우리 서비스만의 JWT 발급
+    # 3. 우리 서비스만의 JWT 발급
     access_token = create_access_token(user_id)
     refresh_token_str = create_refresh_token(user_id)
 
-    # 5. refresh token은 DB에 저장 (로그아웃 시 여기서 지움)
+    # 4. refresh token은 DB에 저장 (로그아웃 시 여기서 지움)
     expires_at = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     crud_auth.save_refresh_token(db, user_id=user_id, token=refresh_token_str, expires_at=expires_at)
 
