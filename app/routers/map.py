@@ -2,8 +2,8 @@
 Map 라우터 (담당: 이가희) - 1개 엔드포인트.
 반경 검색 vs 사각형(bounding box) 검색 분기 처리 (memory 기준).
 
-응답은 내부 facilities DB(관광지/식당/카페/숙소 등)와 카카오 로컬 실시간 조회
-(편의점/병원)를 UnifiedFacilityItem shape으로 합쳐서 반환한다.
+응답은 내부 facilities DB(관광지/식당/숙소 등)와 카카오 로컬 실시간 조회
+(편의점/병원/카페)를 UnifiedFacilityItem shape으로 합쳐서 반환한다.
 """
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,11 +18,14 @@ from app.services import kakao as kakao_service
 router = APIRouter(prefix="/map", tags=["map"])
 
 # 카카오 로컬 category_group_code. 내부 DB에 없는 카테고리만 여기서 다룬다.
+# 카페는 TourAPI에 대응 contentTypeId가 없어 배치 적재 대상에서 제외했고(sync_facilities.py 참고),
+# 대신 카카오 표준 카테고리(CE7)로 실시간 조회한다.
 KAKAO_CATEGORY_GROUP_CODES = {
     "편의점": "CS2",
     "병원": "HP8",
+    "카페": "CE7",
 }
-INTERNAL_CATEGORIES = {"관광지", "식당", "카페", "숙소", "화장실", "주차장"}
+INTERNAL_CATEGORIES = {"관광지", "식당", "숙소", "화장실", "주차장"}
 
 
 def _internal_to_unified(facility: Facility) -> UnifiedFacilityItem:
