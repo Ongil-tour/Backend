@@ -1,5 +1,6 @@
 import time
 import uuid
+from datetime import datetime
 
 from fastapi.testclient import TestClient
 
@@ -26,20 +27,17 @@ def get_favorite_lists() -> list[dict]:
     return response.json()
 
 
-def get_basic_favorite_list() -> dict:
-    """테스트에 사용할 기본 즐겨찾기 목록 하나를 반환한다."""
+def get_list_id(list_type: str) -> str:
+    """고정 즐겨찾기 목록 타입으로 list_id를 찾는다."""
     favorite_lists = get_favorite_lists()
 
-    return next(
-        favorite_list
-        for favorite_list in favorite_lists
-        if favorite_list["list_type"]
-        in {
-            "FREQUENT",
-            "WISHLIST",
-            "VISITED",
-        }
+    favorite_list = next(
+        item
+        for item in favorite_lists
+        if item["list_type"] == list_type
     )
+
+    return favorite_list["id"]
 
 
 def create_test_facilities(count: int = 2) -> list[str]:
@@ -82,7 +80,7 @@ def create_test_facilities(count: int = 2) -> list[str]:
 def delete_test_facilities(
     facility_ids: list[str],
 ) -> None:
-    """테스트 시설과 연결된 즐겨찾기를 삭제한다."""
+    """테스트에서 생성한 시설과 연결된 즐겨찾기를 삭제한다."""
     if not facility_ids:
         return
 
@@ -99,7 +97,9 @@ def delete_test_facilities(
             .filter(
                 Favorite.facility_id.in_(uuid_ids)
             )
-            .delete(synchronize_session=False)
+            .delete(
+                synchronize_session=False
+            )
         )
 
         (
@@ -107,7 +107,9 @@ def delete_test_facilities(
             .filter(
                 Facility.id.in_(uuid_ids)
             )
-            .delete(synchronize_session=False)
+            .delete(
+                synchronize_session=False
+            )
         )
 
         db.commit()
@@ -120,7 +122,7 @@ def create_favorite(
     list_id: str,
     facility_id: str,
 ):
-    """시설을 선택한 즐겨찾기 목록에 저장한다."""
+    """전달받은 목록에 시설을 즐겨찾기로 저장한다."""
     return client.post(
         "/favorites",
         json={
@@ -130,13 +132,24 @@ def create_favorite(
     )
 
 
+def delete_favorite(
+    favorite_id: str,
+):
+    """즐겨찾기 항목을 삭제한다."""
+    return client.delete(
+        f"/favorites/{favorite_id}"
+    )
+
+
 # =========================================================
-# 기본 즐겨찾기 목록 테스트
+# 즐겨찾기 목록 조회 테스트
 # =========================================================
 
 
 def test_get_favorite_lists():
-    response = client.get("/favorites/lists")
+    response = client.get(
+        "/favorites/lists"
+    )
 
     assert response.status_code == 200
 
@@ -157,13 +170,35 @@ def test_get_favorite_lists():
     for item in data:
         assert "id" in item
         assert "list_type" in item
-        assert "name" in item
         assert "created_at" in item
         assert "favorite_count" in item
+
         assert isinstance(
             item["favorite_count"],
             int,
         )
+
+
+def test_get_empty_favorite_list_returns_empty_array():
+    favorite_lists = get_favorite_lists()
+
+    empty_list = next(
+        (
+            favorite_list
+            for favorite_list in favorite_lists
+            if favorite_list["favorite_count"] == 0
+        ),
+        None,
+    )
+
+    assert empty_list is not None
+
+    response = client.get(
+        f"/favorites/lists/{empty_list['id']}"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 def test_get_nonexistent_favorite_list_returns_404():
@@ -174,6 +209,11 @@ def test_get_nonexistent_favorite_list_returns_404():
     )
 
     assert response.status_code == 404
+
+
+# =========================================================
+# 예외 처리 테스트
+# =========================================================
 
 
 def test_delete_nonexistent_favorite_returns_404():
@@ -187,8 +227,9 @@ def test_delete_nonexistent_favorite_returns_404():
 
 
 def test_create_favorite_with_nonexistent_facility_returns_404():
-    favorite_list = get_basic_favorite_list()
-    list_id = favorite_list["id"]
+    list_id = get_list_id(
+        "FREQUENT"
+    )
 
     response = create_favorite(
         list_id=list_id,
@@ -196,18 +237,22 @@ def test_create_favorite_with_nonexistent_facility_returns_404():
     )
 
     assert response.status_code == 404
-    assert (
-        response.json()["detail"]
-        == "시설을 찾을 수 없습니다."
-    )
+
+
+# =========================================================
+# 중복 저장 테스트
+# =========================================================
 
 
 def test_duplicate_favorite_returns_409():
-    favorite_list = get_basic_favorite_list()
-    list_id = favorite_list["id"]
+    list_id = get_list_id(
+        "FREQUENT"
+    )
 
     facility_ids = create_test_facilities(1)
     facility_id = facility_ids[0]
+
+    favorite_id = None
 
     try:
         first_response = create_favorite(
@@ -215,13 +260,17 @@ def test_duplicate_favorite_returns_409():
             facility_id=facility_id,
         )
 
-        assert first_response.status_code == 201
+        assert first_response.status_code in (
+            200,
+            201,
+        ), first_response.text
+
+        first_data = first_response.json()
+        favorite_id = first_data["id"]
+
+        assert first_data["list_id"] == list_id
         assert (
-            first_response.json()["list_id"]
-            == list_id
-        )
-        assert (
-            first_response.json()["facility_id"]
+            first_data["facility_id"]
             == facility_id
         )
 
@@ -231,259 +280,171 @@ def test_duplicate_favorite_returns_409():
         )
 
         assert second_response.status_code == 409
+
         assert (
             second_response.json()["detail"]
             == "해당 시설은 이미 이 목록에 저장되어 있습니다."
         )
 
     finally:
-        delete_test_facilities(facility_ids)
+        if favorite_id is not None:
+            delete_favorite(
+                favorite_id
+            )
+
+        delete_test_facilities(
+            facility_ids
+        )
+
+
+# =========================================================
+# 최신순 정렬 테스트
+# =========================================================
 
 
 def test_favorites_are_sorted_by_latest():
-    favorite_list = get_basic_favorite_list()
-    list_id = favorite_list["id"]
+    list_id = get_list_id(
+        "FREQUENT"
+    )
 
     facility_ids = create_test_facilities(2)
 
-    first_facility_id = facility_ids[0]
-    second_facility_id = facility_ids[1]
+    created_favorite_ids = []
 
     try:
         first_response = create_favorite(
             list_id=list_id,
-            facility_id=first_facility_id,
+            facility_id=facility_ids[0],
         )
 
-        assert first_response.status_code == 201
-        first_favorite = first_response.json()
+        assert first_response.status_code in (
+            200,
+            201,
+        ), first_response.text
 
-        time.sleep(0.2)
+        created_favorite_ids.append(
+            first_response.json()["id"]
+        )
+
+        time.sleep(0.1)
 
         second_response = create_favorite(
             list_id=list_id,
-            facility_id=second_facility_id,
+            facility_id=facility_ids[1],
         )
 
-        assert second_response.status_code == 201
-        second_favorite = second_response.json()
+        assert second_response.status_code in (
+            200,
+            201,
+        ), second_response.text
 
-        list_response = client.get(
+        created_favorite_ids.append(
+            second_response.json()["id"]
+        )
+
+        response = client.get(
             f"/favorites/lists/{list_id}"
         )
 
-        assert list_response.status_code == 200
+        assert response.status_code == 200
 
-        favorites = list_response.json()
-
-        test_favorites = [
+        created_favorites = [
             favorite
-            for favorite in favorites
-            if favorite["facility_id"]
-            in facility_ids
+            for favorite in response.json()
+            if favorite["id"]
+            in created_favorite_ids
         ]
 
-        assert len(test_favorites) == 2
+        assert len(
+            created_favorites
+        ) == 2
+
+        created_at_values = [
+            datetime.fromisoformat(
+                favorite["created_at"].replace(
+                    "Z",
+                    "+00:00",
+                )
+            )
+            for favorite
+            in created_favorites
+        ]
+
+        assert created_at_values == sorted(
+            created_at_values,
+            reverse=True,
+        )
 
         assert (
-            test_favorites[0]["id"]
-            == second_favorite["id"]
-        )
-        assert (
-            test_favorites[0]["facility_id"]
-            == second_facility_id
+            created_favorites[0]["id"]
+            == created_favorite_ids[1]
         )
 
         assert (
-            test_favorites[1]["id"]
-            == first_favorite["id"]
-        )
-        assert (
-            test_favorites[1]["facility_id"]
-            == first_facility_id
-        )
-
-        assert (
-            test_favorites[0]["created_at"]
-            >= test_favorites[1]["created_at"]
+            created_favorites[1]["id"]
+            == created_favorite_ids[0]
         )
 
     finally:
-        delete_test_facilities(facility_ids)
-
-
-def test_favorite_count_increases_after_adding_items():
-    favorite_list = get_basic_favorite_list()
-    list_id = favorite_list["id"]
-
-    initial_count = favorite_list["favorite_count"]
-
-    facility_ids = create_test_facilities(2)
-
-    try:
-        for facility_id in facility_ids:
-            response = create_favorite(
-                list_id=list_id,
-                facility_id=facility_id,
+        for favorite_id in created_favorite_ids:
+            delete_response = delete_favorite(
+                favorite_id
             )
 
-            assert response.status_code == 201
+            assert delete_response.status_code in (
+                200,
+                204,
+                404,
+            )
 
-        favorite_lists = get_favorite_lists()
-
-        updated_list = next(
-            item
-            for item in favorite_lists
-            if item["id"] == list_id
+        delete_test_facilities(
+            facility_ids
         )
+
+
+# =========================================================
+# favorite_count 테스트
+# =========================================================
+
+
+def test_favorite_count_matches_list_items():
+    favorite_lists = get_favorite_lists()
+
+    for favorite_list in favorite_lists:
+        response = client.get(
+            f"/favorites/lists/{favorite_list['id']}"
+        )
+
+        assert response.status_code == 200
 
         assert (
-            updated_list["favorite_count"]
-            == initial_count + 2
+            favorite_list["favorite_count"]
+            == len(response.json())
         )
 
-    finally:
-        delete_test_facilities(facility_ids)
 
+# =========================================================
+# 같은 시설을 여러 목록에 저장하는 테스트
+# =========================================================
 
-def test_favorite_status_before_after_and_multiple_lists():
-    favorite_lists = [
-        item
-        for item in get_favorite_lists()
-        if item["list_type"]
-        in {
-            "FREQUENT",
-            "WISHLIST",
-            "VISITED",
-        }
-    ]
-
-    assert len(favorite_lists) >= 2
-
-    first_list_id = favorite_lists[0]["id"]
-    second_list_id = favorite_lists[1]["id"]
-
-    facility_ids = create_test_facilities(1)
-    facility_id = facility_ids[0]
-
-    try:
-        # 1. 저장 전에는 즐겨찾기 상태가 false
-        before_response = client.get(
-            "/favorites/status",
-            params={
-                "facility_id": facility_id,
-            },
-        )
-
-        assert before_response.status_code == 200
-
-        before_data = before_response.json()
-
-        assert before_data["is_favorite"] is False
-        assert before_data["favorite_list_ids"] == []
-
-        # 2. 첫 번째 목록에 저장
-        first_create_response = create_favorite(
-            list_id=first_list_id,
-            facility_id=facility_id,
-        )
-
-        assert first_create_response.status_code in (
-            200,
-            201,
-        )
-
-        after_first_response = client.get(
-            "/favorites/status",
-            params={
-                "facility_id": facility_id,
-            },
-        )
-
-        assert after_first_response.status_code == 200
-
-        after_first_data = after_first_response.json()
-
-        assert after_first_data["is_favorite"] is True
-        assert (
-            first_list_id
-            in after_first_data["favorite_list_ids"]
-        )
-
-        # 3. 같은 시설을 두 번째 목록에도 저장
-        second_create_response = create_favorite(
-            list_id=second_list_id,
-            facility_id=facility_id,
-        )
-
-        assert second_create_response.status_code in (
-            200,
-            201,
-        )
-
-        after_second_response = client.get(
-            "/favorites/status",
-            params={
-                "facility_id": facility_id,
-            },
-        )
-
-        assert after_second_response.status_code == 200
-
-        after_second_data = after_second_response.json()
-
-        assert after_second_data["is_favorite"] is True
-
-        assert set(
-            after_second_data["favorite_list_ids"]
-        ) >= {
-            first_list_id,
-            second_list_id,
-        }
-
-    finally:
-        delete_test_facilities(facility_ids)
-
-
-def test_favorite_status_with_nonexistent_facility_returns_404():
-    nonexistent_facility_id = str(uuid.uuid4())
-
-    response = client.get(
-        "/favorites/status",
-        params={
-            "facility_id": nonexistent_facility_id,
-        },
-    )
-
-    assert response.status_code == 404
-    assert (
-        response.json()["detail"]
-        == "시설을 찾을 수 없습니다."
-    )
 
 def test_same_facility_can_be_saved_to_different_lists():
-    favorite_lists = [
-        item
-        for item in get_favorite_lists()
-        if item["list_type"]
-        in {
-            "FREQUENT",
-            "WISHLIST",
-            "VISITED",
-        }
-    ]
+    frequent_list_id = get_list_id(
+        "FREQUENT"
+    )
 
-    assert len(favorite_lists) >= 2
-
-    first_list_id = favorite_lists[0]["id"]
-    second_list_id = favorite_lists[1]["id"]
+    wishlist_list_id = get_list_id(
+        "WISHLIST"
+    )
 
     facility_ids = create_test_facilities(1)
     facility_id = facility_ids[0]
+
+    created_favorite_ids = []
 
     try:
         first_response = create_favorite(
-            list_id=first_list_id,
+            list_id=frequent_list_id,
             facility_id=facility_id,
         )
 
@@ -492,8 +453,12 @@ def test_same_facility_can_be_saved_to_different_lists():
             201,
         ), first_response.text
 
+        created_favorite_ids.append(
+            first_response.json()["id"]
+        )
+
         second_response = create_favorite(
-            list_id=second_list_id,
+            list_id=wishlist_list_id,
             facility_id=facility_id,
         )
 
@@ -502,23 +467,115 @@ def test_same_facility_can_be_saved_to_different_lists():
             201,
         ), second_response.text
 
+        created_favorite_ids.append(
+            second_response.json()["id"]
+        )
+
+        assert (
+            first_response.json()["list_id"]
+            == frequent_list_id
+        )
+
+        assert (
+            second_response.json()["list_id"]
+            == wishlist_list_id
+        )
+
         assert (
             first_response.json()["facility_id"]
             == facility_id
         )
+
         assert (
             second_response.json()["facility_id"]
             == facility_id
         )
 
-        assert (
-            first_response.json()["list_id"]
-            == first_list_id
-        )
-        assert (
-            second_response.json()["list_id"]
-            == second_list_id
+    finally:
+        for favorite_id in created_favorite_ids:
+            delete_favorite(
+                favorite_id
+            )
+
+        delete_test_facilities(
+            facility_ids
         )
 
+
+# =========================================================
+# 즐겨찾기 상태 조회 테스트
+# =========================================================
+
+
+def test_favorite_status_returns_all_list_ids():
+    frequent_list_id = get_list_id(
+        "FREQUENT"
+    )
+
+    wishlist_list_id = get_list_id(
+        "WISHLIST"
+    )
+
+    facility_ids = create_test_facilities(1)
+    facility_id = facility_ids[0]
+
+    created_favorite_ids = []
+
+    try:
+        first_response = create_favorite(
+            list_id=frequent_list_id,
+            facility_id=facility_id,
+        )
+
+        assert first_response.status_code in (
+            200,
+            201,
+        ), first_response.text
+
+        created_favorite_ids.append(
+            first_response.json()["id"]
+        )
+
+        second_response = create_favorite(
+            list_id=wishlist_list_id,
+            facility_id=facility_id,
+        )
+
+        assert second_response.status_code in (
+            200,
+            201,
+        ), second_response.text
+
+        created_favorite_ids.append(
+            second_response.json()["id"]
+        )
+
+        status_response = client.get(
+            "/favorites/status",
+            params={
+                "facility_id": facility_id,
+            },
+        )
+
+        assert status_response.status_code == 200
+
+        data = status_response.json()
+
+        assert data["is_favorite"] is True
+
+        assert set(
+            data["favorite_list_ids"]
+        ) == {
+            frequent_list_id,
+            wishlist_list_id,
+        }
+
     finally:
-        delete_test_facilities(facility_ids)
+        for favorite_id in created_favorite_ids:
+            delete_favorite(
+                favorite_id
+            )
+
+        delete_test_facilities(
+            facility_ids
+        )

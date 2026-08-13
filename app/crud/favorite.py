@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from app.models.favorite import (
     Favorite,
     FavoriteList,
-    ListType,
 )
 from app.models.facility import Facility
 
@@ -44,7 +43,6 @@ def get_favorite_lists_by_user(
         {
             "id": favorite_list.id,
             "list_type": favorite_list.list_type,
-            "name": favorite_list.name,
             "created_at": favorite_list.created_at,
             "favorite_count": favorite_count,
         }
@@ -68,84 +66,6 @@ def get_favorite_list_by_id(
         )
         .first()
     )
-
-
-def get_favorite_list_by_name(
-    db: Session,
-    user_id: UUID,
-    name: str,
-) -> FavoriteList | None:
-    """
-    현재 사용자가 같은 이름의 목록을 가지고 있는지 조회한다.
-    """
-    normalized_name = name.strip()
-
-    return (
-        db.query(FavoriteList)
-        .filter(
-            FavoriteList.user_id == user_id,
-            FavoriteList.name == normalized_name,
-        )
-        .first()
-    )
-
-
-def create_custom_favorite_list(
-    db: Session,
-    user_id: UUID,
-    name: str,
-) -> FavoriteList:
-    """
-    사용자 지정 즐겨찾기 목록을 생성한다.
-    """
-    favorite_list = FavoriteList(
-        user_id=user_id,
-        list_type=ListType.CUSTOM,
-        name=name.strip(),
-    )
-
-    db.add(favorite_list)
-    db.commit()
-    db.refresh(favorite_list)
-
-    return favorite_list
-
-
-def update_custom_favorite_list(
-    db: Session,
-    favorite_list: FavoriteList,
-    name: str,
-) -> FavoriteList:
-    """
-    사용자 지정 목록의 이름을 변경한다.
-    """
-    favorite_list.name = name.strip()
-
-    db.commit()
-    db.refresh(favorite_list)
-
-    return favorite_list
-
-
-def delete_custom_favorite_list(
-    db: Session,
-    favorite_list: FavoriteList,
-) -> None:
-    """
-    사용자 지정 목록과 내부 즐겨찾기 항목을 삭제한다.
-    """
-    (
-        db.query(Favorite)
-        .filter(
-            Favorite.list_id == favorite_list.id,
-        )
-        .delete(
-            synchronize_session=False,
-        )
-    )
-
-    db.delete(favorite_list)
-    db.commit()
 
 
 def get_favorites_by_list(
@@ -214,6 +134,7 @@ def get_favorite_by_id(
         .first()
     )
 
+
 def get_favorite_by_list_and_facility(
     db: Session,
     list_id: UUID,
@@ -233,6 +154,8 @@ def get_favorite_by_list_and_facility(
         )
         .first()
     )
+
+
 def create_favorite(
     db: Session,
     user_id: UUID,
@@ -253,6 +176,8 @@ def create_favorite(
     db.refresh(favorite)
 
     return favorite
+
+
 def delete_favorite(
     db: Session,
     favorite: Favorite,

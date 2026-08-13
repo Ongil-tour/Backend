@@ -6,7 +6,6 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
-    String,
     UniqueConstraint,
     func,
 )
@@ -14,11 +13,13 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+
+
 class ListType(str, enum.Enum):
     FREQUENT = "FREQUENT"
     WISHLIST = "WISHLIST"
     VISITED = "VISITED"
-    CUSTOM = "CUSTOM"
+
 
 class FavoriteList(Base):
     __tablename__ = "favorite_lists"
@@ -26,8 +27,8 @@ class FavoriteList(Base):
     __table_args__ = (
         UniqueConstraint(
             "user_id",
-            "name",
-            name="uq_favorite_lists_user_id_name",
+            "list_type",
+            name="uq_favorite_lists_user_id_list_type",
         ),
     )
 
@@ -47,11 +48,6 @@ class FavoriteList(Base):
     list_type = Column(
         Enum(ListType, name="list_type"),
         nullable=False,
-    )
-
-    name = Column(
-        String(50),
-        nullable=True,
     )
 
     created_at = Column(
@@ -89,6 +85,7 @@ class Favorite(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
+
     user_id = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
