@@ -2,27 +2,15 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from app.core.database import SessionLocal
 from app.main import app
+from app.models.facility import Facility
 
 
 client = TestClient(app)
 
 
-def test_barrier_free_facility_not_found():
-    facility_id = uuid.uuid4()
-
-    response = client.get(
-        f"/facilities/{facility_id}/barrier-free"
-    )
-
-    assert response.status_code == 404
-    assert response.json()["detail"] == "facility not found"
-
-from app.core.database import SessionLocal
-from app.models.facility import Facility
-
-
-def test_get_barrier_free_facility():
+def test_get_barrier_free_info():
     db = SessionLocal()
 
     facility = Facility(
@@ -54,14 +42,27 @@ def test_get_barrier_free_facility():
 
         data = response.json()
 
-        assert data["wheelchairAccessible"] is True
-        assert data["disabledRestroom"] is True
-        assert data["parkingLot"] is True
+        assert data["facility_id"] == str(facility.id)
+        assert data["wheelchair_accessible"] is True
+        assert data["disabled_restroom"] is True
+        assert data["disabled_parking"] is True
         assert data["elevator"] is False
-        assert data["petFriendly"] is False
-        assert data["nursingRoom"] is True
+        assert data["pet_friendly"] is False
+        assert data["nursing_room"] is True
+        assert "synced_at" in data
 
     finally:
         db.delete(facility)
         db.commit()
         db.close()
+
+
+def test_get_nonexistent_barrier_free_info_returns_404():
+    nonexistent_id = uuid.uuid4()
+
+    response = client.get(
+        f"/facilities/{nonexistent_id}/barrier-free"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "facility not found"

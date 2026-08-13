@@ -254,10 +254,10 @@ DELETE /favorites/e32eab8e-4245-46ab-8127-bae565732668
 ### 기본 정보
 
 - Method: `GET`
-- URL: `/favorites/status`
+- URL: `/favorites/{facility_id}/status`
 - 설명: 특정 시설이 현재 사용자의 즐겨찾기 목록에 저장되어 있는지 확인합니다.
 
-### Query Parameter
+### Path Parameter
 
 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|
@@ -266,7 +266,7 @@ DELETE /favorites/e32eab8e-4245-46ab-8127-bae565732668
 ### 요청 예시
 
 ```http
-GET /favorites/status?facility_id=a81bac94-e01e-40d2-9056-195564766021
+GET /favorites/a81bac94-e01e-40d2-9056-195564766021/status
 ```
 
 ### 즐겨찾기에 저장된 경우
@@ -302,6 +302,16 @@ GET /favorites/status?facility_id=a81bac94-e01e-40d2-9056-195564766021
 {
   "is_favorite": false,
   "favorite_list_ids": []
+}
+```
+
+### 존재하지 않는 시설
+
+- Status Code: `404 Not Found`
+
+```json
+{
+  "detail": "시설을 찾을 수 없습니다."
 }
 ```
 

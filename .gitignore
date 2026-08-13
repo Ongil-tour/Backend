@@ -17,3 +17,6 @@ venv/
 
 # --- Logs ---
 *.log
+
+# --- DB dumps (팀 공유용, git엔 안 올림 - 용량/데이터 이유) ---
+ops/dumps/

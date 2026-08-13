@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.crud import facility as facility_crud
 from app.core.database import get_db
 from app.schemas.facility import (
-    FacilityAccessibility,
+    BarrierFreeInfoRead,
     FacilityMatchResult,
     FacilityRead,
     FacilitySummary,
@@ -102,12 +102,14 @@ def match_facility_by_location(
 
 @router.get(
     "/{facility_id}/barrier-free",
-    response_model=FacilityAccessibility,
+    response_model=BarrierFreeInfoRead,
 )
-def get_facility_barrier_free(
+def get_barrier_free_info(
     facility_id: uuid.UUID,
     db: Session = Depends(get_db),
 ):
+    """시설 ID를 기준으로 배리어프리 정보 6종을 조회한다."""
+
     facility = facility_crud.get_facility(
         db,
         facility_id,
@@ -119,9 +121,7 @@ def get_facility_barrier_free(
             detail="facility not found",
         )
 
-    return FacilityAccessibility.from_facility(
-        facility
-    )
+    return facility
 
 
 @router.get(

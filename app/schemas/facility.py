@@ -169,4 +169,22 @@ class UnifiedFacilityItem(BaseModel):
     pet_friendly: bool | None
     nursing_room: bool | None
 
-    place_url: str | None = None
+    place_url: str | None = None  # kakao 상세 링크. internal은 None
+
+
+class BarrierFreeInfoRead(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+    )
+
+    facility_id: uuid.UUID = Field(
+        validation_alias="id"
+    )
+    wheelchair_accessible: bool | None
+    disabled_restroom: bool | None
+    disabled_parking: bool | None
+    elevator: bool | None
+    pet_friendly: bool | None
+    nursing_room: bool | None
+    synced_at: datetime
