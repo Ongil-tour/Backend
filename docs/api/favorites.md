@@ -3,6 +3,11 @@
 > 현재 인증은 실제 로그인 대신 Mock 사용자를 사용합니다.  
 > Swagger: http://localhost:8000/docs
 
+> `facility_id`는 내부 DB 시설(UUID)뿐 아니라 카카오 로컬 실시간 결과(place id 문자열,
+> 카페/병원/편의점)도 저장할 수 있습니다. `source`(`internal` | `kakao`)로 구분하며,
+> `internal`만 저장 시점에 시설 존재 여부를 검증합니다. `kakao`는 재조회 시 카카오 API
+> 쿼터가 소모되므로 검증 없이 프론트가 넘긴 값을 그대로 신뢰합니다.
+
 ---
 
 ## 1. 즐겨찾기 목록 조회
@@ -96,12 +101,14 @@ GET /favorites/lists/4bd8b578-b03e-4f23-a8b2-f489fb92df92
   {
     "id": "e32eab8e-4245-46ab-8127-bae565732668",
     "facility_id": "a81bac94-e01e-40d2-9056-195564766021",
+    "source": "internal",
     "list_id": "4bd8b578-b03e-4f23-a8b2-f489fb92df92",
     "created_at": "2026-07-28T06:20:00"
   },
   {
     "id": "f24135bb-90bb-4a76-97f0-4052781dff04",
-    "facility_id": "c1b55c49-32ac-4dac-9f40-df453d4ea71e",
+    "facility_id": "521460056",
+    "source": "kakao",
     "list_id": "4bd8b578-b03e-4f23-a8b2-f489fb92df92",
     "created_at": "2026-07-28T06:10:00"
   }
@@ -113,7 +120,8 @@ GET /favorites/lists/4bd8b578-b03e-4f23-a8b2-f489fb92df92
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `id` | UUID | 즐겨찾기 항목 ID |
-| `facility_id` | UUID | 저장된 시설 ID |
+| `facility_id` | String | 저장된 시설 ID (internal=UUID 문자열, kakao=place id 문자열) |
+| `source` | String | 시설 출처 (`internal` \| `kakao`) |
 | `list_id` | UUID | 항목이 속한 목록 ID |
 | `created_at` | DateTime | 즐겨찾기 저장 시각 |
 
@@ -152,6 +160,7 @@ GET /favorites/lists/4bd8b578-b03e-4f23-a8b2-f489fb92df92
 ```json
 {
   "facility_id": "a81bac94-e01e-40d2-9056-195564766021",
+  "source": "internal",
   "list_id": "4bd8b578-b03e-4f23-a8b2-f489fb92df92"
 }
 ```
@@ -160,7 +169,8 @@ GET /favorites/lists/4bd8b578-b03e-4f23-a8b2-f489fb92df92
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `facility_id` | UUID | 필수 | 저장할 시설 ID |
+| `facility_id` | String | 필수 | 저장할 시설 ID (internal=UUID 문자열, kakao=place id 문자열) |
+| `source` | String | 선택 (기본값 `internal`) | 시설 출처 (`internal` \| `kakao`) |
 | `list_id` | UUID | 필수 | 저장할 즐겨찾기 목록 ID |
 
 ### 성공 응답
@@ -171,6 +181,7 @@ GET /favorites/lists/4bd8b578-b03e-4f23-a8b2-f489fb92df92
 {
   "id": "e32eab8e-4245-46ab-8127-bae565732668",
   "facility_id": "a81bac94-e01e-40d2-9056-195564766021",
+  "source": "internal",
   "list_id": "4bd8b578-b03e-4f23-a8b2-f489fb92df92",
   "created_at": "2026-07-28T06:20:00"
 }
@@ -186,13 +197,27 @@ GET /favorites/lists/4bd8b578-b03e-4f23-a8b2-f489fb92df92
 }
 ```
 
-### 존재하지 않는 시설
+### 존재하지 않는 시설 (`source: "internal"`만 해당)
+
+`source`가 `kakao`인 경우 존재 검증을 하지 않으므로 이 오류는 발생하지 않습니다.
 
 - Status Code: `404 Not Found`
 
 ```json
 {
   "detail": "시설을 찾을 수 없습니다."
+}
+```
+
+### facility_id 형식이 source와 맞지 않는 경우
+
+`source: "internal"`인데 `facility_id`가 UUID 형식이 아닌 경우:
+
+- Status Code: `422 Unprocessable Entity`
+
+```json
+{
+  "detail": "internal 시설의 facility_id는 UUID 형식이어야 합니다."
 }
 ```
 
@@ -261,12 +286,19 @@ DELETE /favorites/e32eab8e-4245-46ab-8127-bae565732668
 
 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `facility_id` | UUID | 필수 | 즐겨찾기 상태를 조회할 시설 ID |
+| `facility_id` | String | 필수 | 즐겨찾기 상태를 조회할 시설 ID (internal=UUID 문자열, kakao=place id 문자열) |
+
+### Query Parameter
+
+| 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `source` | String | 선택 (기본값 `internal`) | 시설 출처 (`internal` \| `kakao`) |
 
 ### 요청 예시
 
 ```http
-GET /favorites/a81bac94-e01e-40d2-9056-195564766021/status
+GET /favorites/a81bac94-e01e-40d2-9056-195564766021/status?source=internal
+GET /favorites/521460056/status?source=kakao
 ```
 
 ### 즐겨찾기에 저장된 경우
@@ -305,7 +337,9 @@ GET /favorites/a81bac94-e01e-40d2-9056-195564766021/status
 }
 ```
 
-### 존재하지 않는 시설
+### 존재하지 않는 시설 (`source: "internal"`만 해당)
+
+`source`가 `kakao`인 경우 존재 검증을 하지 않으므로 이 오류는 발생하지 않습니다.
 
 - Status Code: `404 Not Found`
 
@@ -359,4 +393,6 @@ UUID 형식이 잘못된 값을 전달한 경우 FastAPI 입력 검증에 의해
 - 존재하지 않는 즐겨찾기 삭제 시 `404`
 - 즐겨찾기 최신순 정렬
 - `favorite_count`와 실제 저장 항목 개수 일치
-- pytest 테스트 8개 통과
+- `source: "internal"`인데 `facility_id`가 UUID가 아니면 `422`
+- `source: "kakao"`는 존재 검증 없이 저장 및 상태 조회 가능
+- pytest 테스트 10개 통과

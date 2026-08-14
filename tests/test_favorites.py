@@ -69,12 +69,13 @@ def delete_test_facilities(facility_ids: list[str]):
         db.close()
 
 
-def create_favorite(list_id: str, facility_id: str):
+def create_favorite(list_id: str, facility_id: str, source: str = "internal"):
     return client.post(
         "/favorites",
         json={
             "list_id": list_id,
             "facility_id": facility_id,
+            "source": source,
         },
     )
 
@@ -249,6 +250,53 @@ def test_favorites_are_sorted_by_latest():
             assert delete_response.status_code in (200, 204)
 
         delete_test_facilities(facility_ids)
+
+
+def test_create_favorite_with_non_uuid_internal_facility_id_returns_422():
+    favorite_lists = get_favorite_lists()
+    list_id = favorite_lists[0]["id"]
+
+    response = create_favorite(
+        list_id=list_id,
+        facility_id="521460056",  # 카카오 place id 형식, internal 소스엔 UUID가 아니라 부적합
+        source="internal",
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_kakao_favorite_skips_existence_check():
+    """kakao 소스는 내부 DB에 없는 place id라도 재조회 없이 저장을 허용한다."""
+    favorite_lists = get_favorite_lists()
+    list_id = favorite_lists[0]["id"]
+    facility_id = f"kakao-test-{uuid.uuid4().hex[:8]}"
+    favorite_id = None
+
+    try:
+        response = create_favorite(
+            list_id=list_id,
+            facility_id=facility_id,
+            source="kakao",
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["facility_id"] == facility_id
+        assert body["source"] == "kakao"
+
+        favorite_id = body["id"]
+
+        status_response = client.get(
+            f"/favorites/{facility_id}/status",
+            params={"source": "kakao"},
+        )
+        assert status_response.status_code == 200
+        assert status_response.json()["is_favorite"] is True
+
+    finally:
+        if favorite_id is not None:
+            delete_response = delete_favorite(favorite_id)
+            assert delete_response.status_code in (200, 204)
 
 
 def test_favorite_count_matches_list_items():

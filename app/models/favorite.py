@@ -56,17 +56,21 @@ class Favorite(Base):
     list_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("favorite_lists.id", ondelete="CASCADE"), nullable=False
     )
-    facility_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("facilities.id", ondelete="CASCADE"), nullable=False
-    )
+    # 내부 DB(facilities.id, UUID)와 카카오 로컬 실시간 결과(place id, 숫자 문자열)를
+    # 둘 다 담아야 해서 UUID FK가 아니라 문자열로 둔다. 어느 소스인지는 source로 구분한다
+    # (app/routers/map.py의 UnifiedFacilityItem.source와 동일한 개념).
+    facility_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'internal'"))
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     favorite_list: Mapped["FavoriteList"] = relationship(back_populates="favorites")
 
     __table_args__ = (
-        UniqueConstraint("list_id", "facility_id", name="favorites_list_id_facility_id_key"),
+        UniqueConstraint(
+            "list_id", "facility_id", "source", name="favorites_list_id_facility_id_source_key"
+        ),
         Index("idx_favorites_user_id", "user_id"),
         Index("idx_favorites_list_id", "list_id"),
-        Index("idx_favorites_facility_id", "facility_id"),
+        Index("idx_favorites_facility_id_source", "facility_id", "source"),
     )

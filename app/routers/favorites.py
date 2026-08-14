@@ -1,7 +1,9 @@
 """
 Favorites 라우터 (담당: 신지민) - 총 5개 엔드포인트.
 favorite_lists는 list_type(FREQUENT/WISHLIST/VISITED)만 갖는 3개 고정 리스트,
-favorites는 facility_id FK 참조로 정규화됨 (확정 스키마 기준).
+favorites의 facility_id는 내부 DB(source=internal, UUID)와 카카오 로컬 실시간 결과
+(source=kakao, place id 문자열)를 둘 다 저장할 수 있는 문자열 컬럼이다. kakao는
+저장 시점에 존재 검증을 하지 않는다 (프론트가 /map/markers에서 받은 값을 신뢰).
 DB 쓰기는 저장 시점에만 발생 (조회는 프론트 메모리 캐시 활용).
 """
 import uuid
@@ -14,6 +16,7 @@ from app.crud import favorite as favorite_crud
 from app.deps import get_current_user_mock
 from app.models.user import User
 from app.schemas.favorite import (
+    FacilitySource,
     FavoriteCreate,
     FavoriteListRead,
     FavoriteRead,
@@ -122,21 +125,30 @@ def add_favorite(
             detail="즐겨찾기 리스트를 찾을 수 없습니다.",
         )
 
-    facility = favorite_crud.get_facility_by_id(
-        db=db,
-        facility_id=payload.facility_id,
-    )
+    # internal(내부 DB)만 존재 검증한다. kakao는 재조회하면 쿼터만 낭비되므로
+    # 프론트가 /map/markers에서 받은 값을 그대로 신뢰한다.
+    if payload.source == "internal":
+        try:
+            facility_uuid = uuid.UUID(payload.facility_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="internal 시설의 facility_id는 UUID 형식이어야 합니다.",
+            )
 
-    if facility is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="시설을 찾을 수 없습니다.",
-        )
+        facility = favorite_crud.get_facility_by_id(db=db, facility_id=facility_uuid)
+
+        if facility is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="시설을 찾을 수 없습니다.",
+            )
 
     existing_favorite = favorite_crud.get_existing_favorite(
         db=db,
         list_id=payload.list_id,
         facility_id=payload.facility_id,
+        source=payload.source,
     )
 
     if existing_favorite is not None:
@@ -150,6 +162,7 @@ def add_favorite(
         user_id=current_user.id,
         facility_id=payload.facility_id,
         list_id=payload.list_id,
+        source=payload.source,
     )
 
 
@@ -216,25 +229,33 @@ def remove_favorite(
     },
 )
 def check_favorite_status(
-    facility_id: uuid.UUID,
+    facility_id: str,
+    source: FacilitySource = "internal",
     current_user: User = Depends(get_current_user_mock),
     db: Session = Depends(get_db),
 ):
-    facility = favorite_crud.get_facility_by_id(
-        db=db,
-        facility_id=facility_id,
-    )
+    if source == "internal":
+        try:
+            facility_uuid = uuid.UUID(facility_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="internal 시설의 facility_id는 UUID 형식이어야 합니다.",
+            )
 
-    if facility is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="시설을 찾을 수 없습니다.",
-        )
+        facility = favorite_crud.get_facility_by_id(db=db, facility_id=facility_uuid)
+
+        if facility is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="시설을 찾을 수 없습니다.",
+            )
 
     favorites = favorite_crud.get_favorites_by_facility(
         db=db,
         user_id=current_user.id,
         facility_id=facility_id,
+        source=source,
     )
 
     return {

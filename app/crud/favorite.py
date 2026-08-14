@@ -89,7 +89,8 @@ def get_facility_by_id(
 def get_existing_favorite(
     db: Session,
     list_id: uuid.UUID,
-    facility_id: uuid.UUID,
+    facility_id: str,
+    source: str,
 ) -> Favorite | None:
     """같은 리스트에 같은 시설이 이미 저장되어 있는지 확인한다."""
     return (
@@ -97,6 +98,7 @@ def get_existing_favorite(
         .filter(
             Favorite.list_id == list_id,
             Favorite.facility_id == facility_id,
+            Favorite.source == source,
         )
         .first()
     )
@@ -105,14 +107,16 @@ def get_existing_favorite(
 def create_favorite(
     db: Session,
     user_id: uuid.UUID,
-    facility_id: uuid.UUID,
+    facility_id: str,
     list_id: uuid.UUID,
+    source: str,
 ) -> Favorite:
     """즐겨찾기 항목을 생성한다."""
     favorite = Favorite(
         user_id=user_id,
         facility_id=facility_id,
         list_id=list_id,
+        source=source,
     )
 
     db.add(favorite)
@@ -150,7 +154,8 @@ def delete_favorite(
 def get_favorites_by_facility(
     db: Session,
     user_id: uuid.UUID,
-    facility_id: uuid.UUID,
+    facility_id: str,
+    source: str,
 ) -> list[Favorite]:
     """특정 시설에 대한 현재 사용자의 즐겨찾기 항목을 모두 조회한다."""
     return (
@@ -158,6 +163,7 @@ def get_favorites_by_facility(
         .filter(
             Favorite.user_id == user_id,
             Favorite.facility_id == facility_id,
+            Favorite.source == source,
         )
         .order_by(Favorite.list_id.asc())
         .all()
