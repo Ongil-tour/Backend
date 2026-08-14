@@ -74,7 +74,7 @@ class UserSettings(Base):
     high_contrast: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     font_size: Mapped[str] = mapped_column(String(10), nullable=False, server_default=text("'md'"))
     dark_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
-    profile_image: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'avatar_1'"))
+    profile_image: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("profile1.png"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )

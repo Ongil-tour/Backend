@@ -24,7 +24,7 @@ def upsert_user_settings(db: Session, user_id: uuid.UUID, update_data: UserSetti
         raise HTTPException(status_code=422, detail="font_size는 'sm', 'md', 'lg' 중 하나여야 합니다.")
 
     # (2) [방어 로직] 프로필 사진 검증 - 4개 중 하나여야 함
-    if update_data.profile_image is not None and update_data.profile_image not in ['avatar_1', 'avatar_2', 'avatar_3', 'avatar_4']:
+    if update_data.profile_image is not None and update_data.profile_image not in ['profile1.png', 'profile2.png', 'profile3.png', 'aprofile4.png']:
         raise HTTPException(status_code=422, detail="profile_image는 정해진 4개 중 하나여야 합니다.")
 
     # (3) 기존 설정 데이터 찾기

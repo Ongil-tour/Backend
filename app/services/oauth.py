@@ -14,6 +14,7 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "")
 
 # ── 카카오 ──────────────────────────────
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY", "")
+KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET", "")
 KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", "")
 
 # ── 네이버 ──────────────────────────────
@@ -26,48 +27,33 @@ NAVER_REDIRECT_URI = os.getenv("NAVER_REDIRECT_URI", "")
 # 구글
 # ============================================================
 
-async def get_google_access_token(code: str) -> str:
-    """구글이 준 code를 구글 access token으로 교환."""
-    token_url = "https://oauth2.googleapis.com/token"
-    payload = {
-        "grant_type": "authorization_code",
-        "client_id": GOOGLE_CLIENT_ID,
-        "client_secret": GOOGLE_CLIENT_SECRET,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
-        "code": code,
-    }
+async def verify_google_id_token(id_token: str) -> dict:
+    """
+    프론트(모바일 SDK)가 이미 로그인 완료 후 받은 구글 idToken을 검증하고,
+    안에 담긴 사용자 정보(email 등)를 꺼냄.
+    """
+    verify_url = "https://oauth2.googleapis.com/tokeninfo"
 
     async with httpx.AsyncClient() as client:
-        response = await client.post(token_url, data=payload)
+        response = await client.get(verify_url, params={"id_token": id_token})
 
     if response.status_code != 200:
-        raise HTTPException(status_code=400, detail="구글 토큰 교환 실패")
+        raise HTTPException(status_code=401, detail="유효하지 않은 구글 idToken입니다.")
 
-    return response.json()["access_token"]
+    payload = response.json()
 
+    # 이 idToken이 진짜 우리 앱을 위해 발급된 게 맞는지 확인 (다른 앱용 토큰 도용 방지)
+    if payload.get("aud") != GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=401, detail="이 앱을 위해 발급된 토큰이 아닙니다.")
 
-async def get_google_user_info(google_access_token: str) -> dict:
-    """구글 access token으로 사용자 정보(email) 조회."""
-    user_info_url = "https://www.googleapis.com/oauth2/v2/userinfo"
-    headers = {"Authorization": f"Bearer {google_access_token}"}
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(user_info_url, headers=headers)
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=400, detail="구글 사용자 정보 조회 실패")
-
-    user_data = response.json()
-    email = user_data.get("email")
-
+    email = payload.get("email")
     if not email:
         raise HTTPException(status_code=400, detail="구글 계정에서 이메일을 가져올 수 없습니다.")
 
     return {
-        "provider_user_id": user_data["id"],
+        "provider_user_id": payload["sub"],  # 구글의 고유 사용자 ID
         "email": email,
     }
-
 
 # ============================================================
 # 카카오
@@ -81,6 +67,7 @@ async def get_kakao_access_token(code: str) -> str:
         "client_id": KAKAO_REST_API_KEY,
         "redirect_uri": KAKAO_REDIRECT_URI,
         "code": code,
+        "client_secret": KAKAO_CLIENT_SECRET, 
     }
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
