@@ -9,6 +9,7 @@ from app.core.database import SessionLocal
 from app.main import app
 from app.models.user import User, UserSettings
 from app.deps import MOCK_USER_ID
+from app.scripts.seed import seed
 
 
 client = TestClient(app)
@@ -46,8 +47,10 @@ def test_patch_settings_invalid_font_size_returns_422():
 def test_delete_user_removes_cascaded_data():
     """
     DELETE /users/me - 유저 삭제 시 user_settings도 같이 지워져야 함 (CASCADE 확인).
-    ⚠️ mock 유저는 다른 작업(Swagger 수동 테스트 등)에서도 공유해서 쓰는 유저라서,
-    테스트가 끝나면 반드시 다시 시드해서 복구해야 함.
+    ⚠️ mock 유저는 다른 테스트 파일(예: test_favorites.py)에서도 공유해서 쓰는 유저라서,
+    테스트가 끝나면 반드시 seed()로 "완전히" 복구해야 한다.
+    User row만 다시 만들면 SocialAccount/UserSettings/FavoriteList 3개가 없는 채로
+    남아서 다른 테스트가 깨진다 (예: 즐겨찾기 목록 3개 조회가 빈 배열이 됨).
     """
     db = SessionLocal()
     try:
@@ -65,11 +68,5 @@ def test_delete_user_removes_cascaded_data():
         assert db.query(UserSettings).filter(UserSettings.user_id == MOCK_USER_ID).first() is None
     finally:
         db.close()
-
-        # mock 유저 복구 (다음 테스트, 다음 Swagger 수동 테스트를 위해)
-        db2 = SessionLocal()
-        try:
-            db2.add(User(id=MOCK_USER_ID, email="mock@example.com"))
-            db2.commit()
-        finally:
-            db2.close()
+        # mock 유저 + SocialAccount + 즐겨찾기 목록 3개까지 전부 원상복구
+        seed()
