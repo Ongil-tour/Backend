@@ -21,9 +21,25 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
-    social_accounts: Mapped[list["SocialAccount"]] = relationship(back_populates="user")
-    settings: Mapped["UserSettings"] = relationship(back_populates="user", uselist=False)
-    favorite_lists: Mapped[list["FavoriteList"]] = relationship(back_populates="user")
+    # cascade와 passive_deletes 옵션 추가
+    social_accounts: Mapped[list["SocialAccount"]] = relationship(
+        back_populates="user",
+        cascade="all, delete",
+        passive_deletes=True
+    )
+    
+    settings: Mapped["UserSettings"] = relationship(
+        back_populates="user", 
+        uselist=False,
+        cascade="all, delete",
+        passive_deletes=True
+    )
+    
+    favorite_lists: Mapped[list["FavoriteList"]] = relationship(
+        back_populates="user",
+        cascade="all, delete",
+        passive_deletes=True
+    )
 
 
 class SocialAccount(Base):
@@ -56,13 +72,14 @@ class UserSettings(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     high_contrast: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
-    font_size: Mapped[str] = mapped_column(String(10), nullable=False, server_default=text("'md'"))  # 'sm'|'md'|'lg'
+    font_size: Mapped[str] = mapped_column(String(10), nullable=False, server_default=text("'md'"))
+    dark_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    profile_image: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("profile1.png"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
     user: Mapped["User"] = relationship(back_populates="settings")
-
 
 class RefreshToken(Base):
     """Rolling refresh token 저장용 (멀티 디바이스 지원, 1 user : N)."""

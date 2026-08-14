@@ -17,12 +17,17 @@ class UserSettingsRead(BaseModel):
 
     high_contrast: bool
     font_size: str
+    dark_mode: bool
+    profile_image: str
     updated_at: datetime
 
 
 class UserSettingsUpdate(BaseModel):
     high_contrast: bool | None = None
     font_size: str | None = None
+    dark_mode: bool | None = None
+    profile_image: str | None = None
+
 
 
 class TokenPair(BaseModel):
