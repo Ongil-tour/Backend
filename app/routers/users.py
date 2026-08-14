@@ -6,7 +6,7 @@ PATCH /me는 user_settings(high_contrast/font_size) 갱신으로 대응한다.
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.deps import get_current_user_mock, get_db
+from app.deps import get_current_user, get_db
 from app.models.user import User
 from app.schemas.user import UserRead, UserSettingsRead, UserSettingsUpdate
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("/me", response_model=UserRead)
-def get_my_profile(current_user: User = Depends(get_current_user_mock)):
+def get_my_profile(current_user: User = Depends(get_current_user)):
     """
     내 프로필 조회:
     문지기(Depends)가 이미 유저 정보를 current_user에 담아줬기 때문에,
@@ -28,7 +28,7 @@ def get_my_profile(current_user: User = Depends(get_current_user_mock)):
 @router.patch("/me", response_model=UserSettingsRead)
 def update_my_settings(
     payload: UserSettingsUpdate,
-    current_user: User = Depends(get_current_user_mock),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -40,6 +40,6 @@ def update_my_settings(
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
-def delete_me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user_mock)):
+def delete_me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     crud_user.delete_user(db=db, user_id=current_user.id)
     return

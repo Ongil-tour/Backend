@@ -22,7 +22,7 @@ from app.crud.favorite import (
     get_favorite_status,
     get_favorites_by_list,
 )
-from app.deps import get_current_user_mock
+from app.deps import get_current_user
 from app.models.user import User
 from app.schemas.favorite import (
     FavoriteCreate,
@@ -45,7 +45,7 @@ router = APIRouter(
 )
 def read_favorite_lists(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_mock),
+    current_user: User = Depends(get_current_user),
 ):
     """
     현재 사용자의 기본 즐겨찾기 목록 3개를 조회한다.
@@ -68,7 +68,7 @@ def read_favorite_lists(
 def read_favorites_in_list(
     list_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_mock),
+    current_user: User = Depends(get_current_user),
 ):
     """
     특정 즐겨찾기 목록에 저장된 시설을 조회한다.
@@ -100,7 +100,7 @@ def read_favorites_in_list(
 def add_favorite(
     payload: FavoriteCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_mock),
+    current_user: User = Depends(get_current_user),
 ):
     """
     시설을 선택한 기본 즐겨찾기 목록에 저장한다.
@@ -164,7 +164,7 @@ def add_favorite(
 def remove_favorite(
     favorite_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_mock),
+    current_user: User = Depends(get_current_user),
 ):
     """
     즐겨찾기 목록에 저장된 시설을 삭제한다.
@@ -199,7 +199,7 @@ def remove_favorite(
 def read_favorite_status(
     facility_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_mock),
+    current_user: User = Depends(get_current_user),
 ):
     """
     특정 시설이 어느 즐겨찾기 목록에 저장되어 있는지 조회한다.

@@ -6,13 +6,17 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.core.database import SessionLocal
+from app.core.security import create_access_token
 from app.main import app
 from app.models.user import User, UserSettings
 from app.deps import MOCK_USER_ID
 from app.scripts.seed import seed
 
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={"Authorization": f"Bearer {create_access_token(MOCK_USER_ID)}"},
+)
 
 
 def get_my_settings():

@@ -5,12 +5,19 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 
 from app.core.database import SessionLocal
+from app.core.security import create_access_token
+from app.deps import MOCK_USER_ID
 from app.main import app
 from app.models.facility import Facility
 from app.models.favorite import Favorite
 
 
-client = TestClient(app)
+# 실 인증 연결 후엔 Authorization 헤더 없이는 전부 401이라, mock 유저로 진짜
+# access token을 발급받아 TestClient 기본 헤더로 박아둔다.
+client = TestClient(
+    app,
+    headers={"Authorization": f"Bearer {create_access_token(MOCK_USER_ID)}"},
+)
 
 
 # =========================================================
