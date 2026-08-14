@@ -279,10 +279,10 @@ DELETE /favorites/e32eab8e-4245-46ab-8127-bae565732668
 ### 기본 정보
 
 - Method: `GET`
-- URL: `/favorites/status`
+- URL: `/favorites/{facility_id}/status`
 - 설명: 특정 시설이 현재 사용자의 즐겨찾기 목록에 저장되어 있는지 확인합니다.
 
-### Query Parameter
+### Path Parameter
 
 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|
