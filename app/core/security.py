@@ -25,6 +25,10 @@ def create_access_token(user_id: uuid.UUID) -> str:
         "sub": str(user_id),
         "exp": expire,
         "type": "access",
+        # exp는 초 단위로 잘려서 같은 유저가 같은 초에 토큰을 두 번 발급받으면
+        # payload가 완전히 같아져 토큰 문자열도 같아짐 -> refresh_tokens.token
+        # unique 제약 위반으로 이어짐. jti로 매 발급마다 무조건 다른 값이 되게 함.
+        "jti": str(uuid.uuid4()),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -36,6 +40,7 @@ def create_refresh_token(user_id: uuid.UUID) -> str:
         "sub": str(user_id),
         "exp": expire,
         "type": "refresh",
+        "jti": str(uuid.uuid4()),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
