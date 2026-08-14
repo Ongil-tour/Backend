@@ -6,13 +6,17 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.core.database import SessionLocal
+from app.core.security import create_access_token
 from app.main import app
 from app.models.user import User, UserSettings
 from app.deps import MOCK_USER_ID
 from app.scripts.seed import seed
 
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={"Authorization": f"Bearer {create_access_token(MOCK_USER_ID)}"},
+)
 
 
 def get_my_settings():
@@ -35,6 +39,17 @@ def test_patch_settings_success():
 
     # 테스트가 남긴 변경사항을 원래 값으로 되돌려놓기 (다른 테스트/작업에 영향 안 주게)
     client.patch("/users/me", json={"font_size": "md", "dark_mode": False})
+
+
+def test_patch_settings_all_profile_images_accepted():
+    """PATCH /users/me - 허용된 profile_image 4종이 전부 통과해야 함 (오타로 하나만 막히던 버그 재발 방지)."""
+    for profile_image in ["profile1.png", "profile2.png", "profile3.png", "profile4.png"]:
+        response = client.patch("/users/me", json={"profile_image": profile_image})
+        assert response.status_code == 200, response.text
+        assert response.json()["profile_image"] == profile_image
+
+    # 원래 값으로 되돌려놓기
+    client.patch("/users/me", json={"profile_image": "profile1.png"})
 
 
 def test_patch_settings_invalid_font_size_returns_422():

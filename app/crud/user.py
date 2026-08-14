@@ -1,5 +1,4 @@
 import uuid
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.models.user import User, UserSettings
 from app.schemas.user import UserSettingsUpdate
@@ -17,28 +16,23 @@ def get_user_by_id(db: Session, user_id: uuid.UUID):
 def get_user_settings(db: Session, user_id: uuid.UUID):
     return db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
 
-# 4. 이름 변경 및 422 에러 검증 + Upsert 로직 고도화
+# 4. Upsert 로직
+# font_size/profile_image 허용값 검증은 app/schemas/user.py의 UserSettingsUpdate가
+# Literal 타입으로 이미 걸러주기 때문에 여기서 따로 HTTPException을 던질 필요가 없음
+# (CRUD 레이어는 DB 접근만 담당, HTTP 관련 처리는 스키마/라우터 쪽 책임).
 def upsert_user_settings(db: Session, user_id: uuid.UUID, update_data: UserSettingsUpdate):
-    # (1) [방어 로직] 폰트 사이즈가 들어왔는데 허용된 값('sm', 'md', 'lg')이 아니면 422 에러 발생
-    if update_data.font_size is not None and update_data.font_size not in ['sm', 'md', 'lg']:
-        raise HTTPException(status_code=422, detail="font_size는 'sm', 'md', 'lg' 중 하나여야 합니다.")
-
-    # (2) [방어 로직] 프로필 사진 검증 - 4개 중 하나여야 함
-    if update_data.profile_image is not None and update_data.profile_image not in ['profile1.png', 'profile2.png', 'profile3.png', 'aprofile4.png']:
-        raise HTTPException(status_code=422, detail="profile_image는 정해진 4개 중 하나여야 합니다.")
-
-    # (3) 기존 설정 데이터 찾기
+    # (1) 기존 설정 데이터 찾기
     db_settings = get_user_settings(db, user_id)
 
-    # (4) 클라이언트가 '실제로 값을 넣어서 보낸 필드'만 딕셔너리로 추출 (exclude_unset=True)
+    # (2) 클라이언트가 '실제로 값을 넣어서 보낸 필드'만 딕셔너리로 추출 (exclude_unset=True)
     update_dict = update_data.model_dump(exclude_unset=True)
 
     if db_settings:
-        # (5) [Upsert: 갱신] 데이터가 이미 있으면 뽑아낸 값을 덮어씌우기
+        # (3) [Upsert: 갱신] 데이터가 이미 있으면 뽑아낸 값을 덮어씌우기
         for key, value in update_dict.items():
             setattr(db_settings, key, value)
     else:
-        # (6) [Upsert: 생성] 데이터가 없으면 추출한 값으로 새로 생성하기
+        # (4) [Upsert: 생성] 데이터가 없으면 추출한 값으로 새로 생성하기
         db_settings = UserSettings(user_id=user_id, **update_dict)
         db.add(db_settings)
 
