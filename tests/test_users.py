@@ -37,6 +37,17 @@ def test_patch_settings_success():
     client.patch("/users/me", json={"font_size": "md", "dark_mode": False})
 
 
+def test_patch_settings_all_profile_images_accepted():
+    """PATCH /users/me - 허용된 profile_image 4종이 전부 통과해야 함 (오타로 하나만 막히던 버그 재발 방지)."""
+    for profile_image in ["profile1.png", "profile2.png", "profile3.png", "profile4.png"]:
+        response = client.patch("/users/me", json={"profile_image": profile_image})
+        assert response.status_code == 200, response.text
+        assert response.json()["profile_image"] == profile_image
+
+    # 원래 값으로 되돌려놓기
+    client.patch("/users/me", json={"profile_image": "profile1.png"})
+
+
 def test_patch_settings_invalid_font_size_returns_422():
     """PATCH /users/me - 허용 안 된 font_size 값을 보내면 422가 와야 함."""
     response = client.patch("/users/me", json={"font_size": "extra_large"})
