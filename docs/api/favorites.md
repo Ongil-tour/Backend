@@ -66,7 +66,7 @@ Path Parameter, Query Parameter, Request Body가 없습니다.
 | `WISHLIST` | 가고 싶은 장소 |
 | `VISITED` | 방문한 장소 |
 
-저장된 즐겨찾기가 없는 목록은 `favorite_count: 0`으로 반환됩니다.
+저장된 즐겨찾기가 없는 목록은 `favorite_count: 0`으로 반환됩니다. 사용자 지정 목록은 만들 수 없고 이 3개만 제공합니다.
 
 ---
 
@@ -223,13 +223,13 @@ GET /favorites/lists/4bd8b578-b03e-4f23-a8b2-f489fb92df92
 
 ### 중복 저장
 
-같은 시설을 같은 즐겨찾기 목록에 다시 저장하는 경우:
+같은 시설(같은 `source`)을 같은 즐겨찾기 목록에 다시 저장하는 경우:
 
 - Status Code: `409 Conflict`
 
 ```json
 {
-  "detail": "이미 해당 목록에 저장된 시설입니다."
+  "detail": "해당 시설은 이미 이 목록에 저장되어 있습니다."
 }
 ```
 
@@ -268,7 +268,7 @@ DELETE /favorites/e32eab8e-4245-46ab-8127-bae565732668
 
 ```json
 {
-  "detail": "즐겨찾기를 찾을 수 없습니다."
+  "detail": "즐겨찾기 항목을 찾을 수 없습니다."
 }
 ```
 
@@ -279,26 +279,21 @@ DELETE /favorites/e32eab8e-4245-46ab-8127-bae565732668
 ### 기본 정보
 
 - Method: `GET`
-- URL: `/favorites/{facility_id}/status`
+- URL: `/favorites/status`
 - 설명: 특정 시설이 현재 사용자의 즐겨찾기 목록에 저장되어 있는지 확인합니다.
-
-### Path Parameter
-
-| 이름 | 타입 | 필수 | 설명 |
-|---|---|---|---|
-| `facility_id` | String | 필수 | 즐겨찾기 상태를 조회할 시설 ID (internal=UUID 문자열, kakao=place id 문자열) |
 
 ### Query Parameter
 
 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|
+| `facility_id` | String | 필수 | 즐겨찾기 상태를 조회할 시설 ID (internal=UUID 문자열, kakao=place id 문자열) |
 | `source` | String | 선택 (기본값 `internal`) | 시설 출처 (`internal` \| `kakao`) |
 
 ### 요청 예시
 
 ```http
-GET /favorites/a81bac94-e01e-40d2-9056-195564766021/status?source=internal
-GET /favorites/521460056/status?source=kakao
+GET /favorites/status?facility_id=a81bac94-e01e-40d2-9056-195564766021&source=internal
+GET /favorites/status?facility_id=521460056&source=kakao
 ```
 
 ### 즐겨찾기에 저장된 경우
@@ -390,9 +385,10 @@ UUID 형식이 잘못된 값을 전달한 경우 FastAPI 입력 검증에 의해
 - 존재하지 않는 목록 조회 시 `404`
 - 존재하지 않는 시설 저장 시 `404`
 - 같은 시설 중복 저장 시 `409`
+- 같은 시설을 다른 목록에 저장하는 것은 허용
 - 존재하지 않는 즐겨찾기 삭제 시 `404`
 - 즐겨찾기 최신순 정렬
 - `favorite_count`와 실제 저장 항목 개수 일치
+- 즐겨찾기 상태 조회 시 저장된 모든 목록 ID 반환
 - `source: "internal"`인데 `facility_id`가 UUID가 아니면 `422`
 - `source: "kakao"`는 존재 검증 없이 저장 및 상태 조회 가능
-- pytest 테스트 10개 통과

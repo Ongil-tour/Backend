@@ -1,7 +1,7 @@
 """favorites 카카오 소스 지원 (facility_id UUID FK -> 문자열 + source)
 
 Revision ID: d3f8a1b9c2e4
-Revises: cc0aff69eb9c
+Revises: eb1303a93644
 Create Date: 2026-08-14 00:00:00.000000
 
 즐겨찾기가 내부 DB(facilities.id, UUID)뿐 아니라 카카오 로컬 실시간 결과(숫자 문자열 place id)도
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'd3f8a1b9c2e4'
-down_revision: Union[str, None] = 'cc0aff69eb9c'
+down_revision: Union[str, None] = 'eb1303a93644'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -39,14 +39,14 @@ def upgrade() -> None:
     )
 
     op.create_unique_constraint(
-        'favorites_list_id_facility_id_source_key', 'favorites', ['list_id', 'facility_id', 'source']
+        'uq_favorites_list_id_facility_id_source', 'favorites', ['list_id', 'facility_id', 'source']
     )
-    op.create_index('idx_favorites_facility_id_source', 'favorites', ['facility_id', 'source'])
+    op.create_index('ix_favorites_facility_id_source', 'favorites', ['facility_id', 'source'])
 
 
 def downgrade() -> None:
-    op.drop_index('idx_favorites_facility_id_source', table_name='favorites')
-    op.drop_constraint('favorites_list_id_facility_id_source_key', 'favorites', type_='unique')
+    op.drop_index('ix_favorites_facility_id_source', table_name='favorites')
+    op.drop_constraint('uq_favorites_list_id_facility_id_source', 'favorites', type_='unique')
 
     op.drop_column('favorites', 'source')
     op.alter_column(

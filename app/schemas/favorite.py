@@ -1,6 +1,6 @@
-import uuid
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -10,30 +10,34 @@ FacilitySource = Literal["internal", "kakao"]
 
 
 class FavoriteListRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
+    id: UUID
     list_type: ListType
-    favorite_count: int
     created_at: datetime
+    favorite_count: int = 0
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
 
 class FavoriteCreate(BaseModel):
     facility_id: str
     source: FacilitySource = "internal"
-    list_id: uuid.UUID
+    list_id: UUID
 
 
 class FavoriteRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
+    id: UUID
     facility_id: str
     source: FacilitySource
-    list_id: uuid.UUID
+    list_id: UUID
     created_at: datetime
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
 
 class FavoriteStatusRead(BaseModel):
     is_favorite: bool
-    favorite_list_ids: list[uuid.UUID]
+    favorite_list_ids: list[UUID]
