@@ -1,4 +1,5 @@
 import uuid
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.models.user import User, UserSettings
 from app.schemas.user import UserSettingsUpdate
@@ -12,44 +13,49 @@ def get_user_by_email(db: Session, email: str):
 def get_user_by_id(db: Session, user_id: uuid.UUID):
     return db.query(User).filter(User.id == user_id).first()
 
-# 3. 유저 UI 설정 업데이트 함수
-def update_user_settings(db: Session, user_id: uuid.UUID, settings_update: UserSettingsUpdate):
-    # 1. 먼저 해당 유저의 기존 설정 데이터를 찾습니다.
-    db_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
-    
-    # 2. 만약 설정 데이터가 텅 비어있다면? -> 새로 하나 만들어줍니다! (이 부분이 추가되었습니다)
-    if not db_settings:
-        db_settings = UserSettings(user_id=user_id)
+# 3. 유저 설정 조회 함수
+def get_user_settings(db: Session, user_id: uuid.UUID):
+    return db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+
+# 4. 이름 변경 및 422 에러 검증 + Upsert 로직 고도화
+def upsert_user_settings(db: Session, user_id: uuid.UUID, update_data: UserSettingsUpdate):
+    # (1) [방어 로직] 폰트 사이즈가 들어왔는데 허용된 값('sm', 'md', 'lg')이 아니면 422 에러 발생
+    if update_data.font_size is not None and update_data.font_size not in ['sm', 'md', 'lg']:
+        raise HTTPException(status_code=422, detail="font_size는 'sm', 'md', 'lg' 중 하나여야 합니다.")
+
+    # (2) [방어 로직] 프로필 사진 검증 - 4개 중 하나여야 함
+    if update_data.profile_image is not None and update_data.profile_image not in ['profile1.png', 'profile2.png', 'profile3.png', 'aprofile4.png']:
+        raise HTTPException(status_code=422, detail="profile_image는 정해진 4개 중 하나여야 합니다.")
+
+    # (3) 기존 설정 데이터 찾기
+    db_settings = get_user_settings(db, user_id)
+
+    # (4) 클라이언트가 '실제로 값을 넣어서 보낸 필드'만 딕셔너리로 추출 (exclude_unset=True)
+    update_dict = update_data.model_dump(exclude_unset=True)
+
+    if db_settings:
+        # (5) [Upsert: 갱신] 데이터가 이미 있으면 뽑아낸 값을 덮어씌우기
+        for key, value in update_dict.items():
+            setattr(db_settings, key, value)
+    else:
+        # (6) [Upsert: 생성] 데이터가 없으면 추출한 값으로 새로 생성하기
+        db_settings = UserSettings(user_id=user_id, **update_dict)
         db.add(db_settings)
-    
-    # 3. 클라이언트(앱)가 고대비 설정을 보냈다면 업데이트
-    if settings_update.high_contrast is not None:
-        db_settings.high_contrast = settings_update.high_contrast
-    
-    # 4. 클라이언트가 폰트 사이즈 변경을 보냈다면 업데이트
-    if settings_update.font_size is not None:
-        db_settings.font_size = settings_update.font_size
-        
-    # 5. 변경되거나 새로 생성된 내용을 DB에 확정(commit)하고 최신 상태로 가져옵니다.
+
     db.commit()
     db.refresh(db_settings)
-    
+
     return db_settings
 
-# 4. 유저 탈퇴 (삭제) 함수
-def delete_user(db: Session, user_id: uuid.UUID):
-    # 1. 지울 유저 정보를 화면에 돌려주기 위해 미리 찾아만 둡니다.
+# 5. 유저 탈퇴 (삭제) 함수
+def delete_user(db: Session, user_id: uuid.UUID) -> bool:
     db_user = db.query(User).filter(User.id == user_id).first()
     if not db_user:
-        return None
-        
-    # 2. [강제 삭제 명령] 파이썬을 건너뛰고 DB에 설정 데이터를 날려버리라고 직접 명령합니다.
-    db.query(UserSettings).filter(UserSettings.user_id == user_id).delete()
-    
-    # 3. [강제 삭제 명령] 설정이 날아갔으니, 안심하고 유저 본체도 다이렉트로 날려버립니다.
-    db.query(User).filter(User.id == user_id).delete()
-    
-    # 4. 변경된 사항을 DB에 최종 확정 쾅!
+        return False
+
+    # ondelete="CASCADE" 설정 덕분에 user_settings, social_accounts,
+    # favorite_lists, refresh_tokens는 DB가 알아서 같이 지워줌
+    db.delete(db_user)
     db.commit()
-    
-    return db_user
+
+    return True
