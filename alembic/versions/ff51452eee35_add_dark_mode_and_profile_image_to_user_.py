@@ -1,7 +1,7 @@
 """add dark_mode and profile_image to user_setting
 
 Revision ID: ff51452eee35
-Revises: 736c9e861584
+Revises: eb1303a93644
 Create Date: 2026-08-12 18:44:11.640845
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'ff51452eee35'
-down_revision: Union[str, None] = '736c9e861584'
+down_revision: Union[str, None] = 'eb1303a93644'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

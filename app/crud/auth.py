@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.models.favorite import FavoriteList, ListType
 from app.models.user import User, SocialAccount, RefreshToken
 
 
@@ -33,7 +34,9 @@ def create_user_with_social_account(
 ):
     """
     최초 로그인(=회원가입)일 때 호출.
-    users 테이블에 유저를 만들고, 동시에 social_accounts에 연결 정보도 만듦.
+    users 테이블에 유저를 만들고, social_accounts 연결 정보와
+    고정 즐겨찾기 목록(FREQUENT/WISHLIST/VISITED) 3개도 함께 만듦
+    (favorites 파트가 가정하는 "가입 시 리스트 3개 자동 생성"을 여기서 보장).
     """
     # 1. 유저 생성
     new_user = User(email=email)
@@ -48,9 +51,32 @@ def create_user_with_social_account(
     )
     db.add(new_social_account)
 
+    # 3. 고정 즐겨찾기 목록 3종 생성
+    for list_type in ListType:
+        db.add(FavoriteList(user_id=new_user.id, list_type=list_type.value))
+
     db.commit()
     db.refresh(new_user)
     return new_user
+
+
+def link_social_account(
+    db: Session, user_id: uuid.UUID, provider: str, provider_user_id: str
+) -> SocialAccount:
+    """
+    이미 다른 provider로 가입된 이메일로 로그인한 경우 호출.
+    새 User/즐겨찾기 목록을 만들지 않고, 기존 유저에 이 provider 계정만 연결한다.
+    (users.email이 unique라서 그냥 새 User를 만들면 IntegrityError가 남)
+    """
+    new_social_account = SocialAccount(
+        user_id=user_id,
+        provider=provider,
+        provider_user_id=provider_user_id,
+    )
+    db.add(new_social_account)
+    db.commit()
+    db.refresh(new_social_account)
+    return new_social_account
 
 
 # ── refresh_tokens 관련 ──────────────────────────────

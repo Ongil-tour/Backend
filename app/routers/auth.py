@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from app.deps import get_db
 from app.schemas.user import TokenPair
 from app.crud import auth as crud_auth
+from app.crud.user import get_user_by_email
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -66,14 +67,27 @@ async def oauth_callback(provider: str, payload: OAuthLoginRequest, db: Session 
         # 기존 유저 -> 로그인
         user_id = social_account.user_id
     else:
-        # 처음 로그인하는 유저 -> 회원가입 겸용
-        new_user = crud_auth.create_user_with_social_account(
-            db,
-            email=provider_user["email"],
-            provider=provider,
-            provider_user_id=provider_user["provider_user_id"],
-        )
-        user_id = new_user.id
+        existing_user = get_user_by_email(db, email=provider_user["email"])
+
+        if existing_user:
+            # 다른 provider로 이미 가입된 이메일 -> 새 User를 또 만들지 않고 계정만 연동
+            # (users.email이 unique라서 그냥 새로 만들면 500이 남)
+            crud_auth.link_social_account(
+                db,
+                user_id=existing_user.id,
+                provider=provider,
+                provider_user_id=provider_user["provider_user_id"],
+            )
+            user_id = existing_user.id
+        else:
+            # 처음 로그인하는 유저 -> 회원가입 겸용
+            new_user = crud_auth.create_user_with_social_account(
+                db,
+                email=provider_user["email"],
+                provider=provider,
+                provider_user_id=provider_user["provider_user_id"],
+            )
+            user_id = new_user.id
 
     # 우리 서비스만의 JWT 발급
     access_token = create_access_token(user_id)

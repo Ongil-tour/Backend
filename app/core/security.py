@@ -2,18 +2,20 @@
 JWT(JSON Web Token) 생성/검증 유틸리티.
 로그인한 유저를 식별하기 위한 '증표'를 만들고 확인하는 역할을 함.
 """
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from jose import jwt, JWTError
 
-# TODO: .env의 JWT_SECRET_KEY를 실제 랜덤 값으로 채워야 함
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "temporary-dev-secret-change-me")
-ALGORITHM = "HS256"
+from app.core.config import settings
 
-ACCESS_TOKEN_EXPIRE_MINUTES = 30   # access token 수명: 30분
-REFRESH_TOKEN_EXPIRE_DAYS = 14     # refresh token 수명: 14일
+# app.core.config.settings가 .env를 읽는 유일한 창구.
+# 여기서 os.getenv()로 따로 읽으면 설정값이 두 곳으로 갈라져서 어긋날 수 있음.
+SECRET_KEY = settings.JWT_SECRET_KEY
+ALGORITHM = settings.JWT_ALGORITHM
+
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
 
 
 def create_access_token(user_id: uuid.UUID) -> str:
@@ -23,6 +25,10 @@ def create_access_token(user_id: uuid.UUID) -> str:
         "sub": str(user_id),
         "exp": expire,
         "type": "access",
+        # exp는 초 단위로 잘려서 같은 유저가 같은 초에 토큰을 두 번 발급받으면
+        # payload가 완전히 같아져 토큰 문자열도 같아짐 -> refresh_tokens.token
+        # unique 제약 위반으로 이어짐. jti로 매 발급마다 무조건 다른 값이 되게 함.
+        "jti": str(uuid.uuid4()),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -34,6 +40,7 @@ def create_refresh_token(user_id: uuid.UUID) -> str:
         "sub": str(user_id),
         "exp": expire,
         "type": "refresh",
+        "jti": str(uuid.uuid4()),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
