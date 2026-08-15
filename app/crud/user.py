@@ -16,6 +16,20 @@ def get_user_by_id(db: Session, user_id: uuid.UUID):
 def get_user_settings(db: Session, user_id: uuid.UUID):
     return db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
 
+# 3-1. 유저 설정 조회 (없으면 기본값으로 생성)
+# UserSettings는 PATCH를 한 번도 안 하면 row 자체가 없어서, GET만 하는 경우를 위해
+# 없으면 DB 기본값(profile1.png, font_size=md 등)으로 만들어서 반환한다.
+def get_or_create_user_settings(db: Session, user_id: uuid.UUID) -> UserSettings:
+    db_settings = get_user_settings(db, user_id)
+
+    if db_settings is None:
+        db_settings = UserSettings(user_id=user_id)
+        db.add(db_settings)
+        db.commit()
+        db.refresh(db_settings)
+
+    return db_settings
+
 # 4. Upsert 로직
 # font_size/profile_image 허용값 검증은 app/schemas/user.py의 UserSettingsUpdate가
 # Literal 타입으로 이미 걸러주기 때문에 여기서 따로 HTTPException을 던질 필요가 없음
