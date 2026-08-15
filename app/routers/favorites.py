@@ -25,6 +25,7 @@ from app.crud.favorite import (
 from app.deps import get_current_user
 from app.models.user import User
 from app.schemas.favorite import (
+    FacilitySource,
     FavoriteCreate,
     FavoriteListRead,
     FavoriteRead,
@@ -36,6 +37,31 @@ router = APIRouter(
     prefix="/favorites",
     tags=["favorites"],
 )
+
+
+def _require_internal_facility(db: Session, facility_id: str) -> None:
+    """
+    internal 소스만 UUID 형식 + 내부 DB 존재 여부를 검증한다. kakao 소스는 재조회 시
+    카카오 API 쿼터가 소모되므로 검증 없이 프론트가 넘긴 값을 그대로 신뢰한다.
+    """
+    try:
+        facility_uuid = UUID(facility_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="internal 시설의 facility_id는 UUID 형식이어야 합니다.",
+        )
+
+    facility = get_facility_by_id(
+        db=db,
+        facility_id=facility_uuid,
+    )
+
+    if facility is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="시설을 찾을 수 없습니다.",
+        )
 
 
 @router.get(
@@ -103,7 +129,8 @@ def add_favorite(
     current_user: User = Depends(get_current_user),
 ):
     """
-    시설을 선택한 기본 즐겨찾기 목록에 저장한다.
+    시설을 선택한 기본 즐겨찾기 목록에 저장한다. facility_id는 내부 DB(source=internal,
+    UUID)와 카카오 로컬 실시간 결과(source=kakao, place id 문자열) 둘 다 저장할 수 있다.
     """
     favorite_list = get_favorite_list_by_id(
         db=db,
@@ -117,21 +144,14 @@ def add_favorite(
             detail="즐겨찾기 목록을 찾을 수 없습니다.",
         )
 
-    facility = get_facility_by_id(
-        db=db,
-        facility_id=payload.facility_id,
-    )
-
-    if facility is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="시설을 찾을 수 없습니다.",
-        )
+    if payload.source == "internal":
+        _require_internal_facility(db=db, facility_id=payload.facility_id)
 
     existing_favorite = get_favorite_by_list_and_facility(
         db=db,
         list_id=payload.list_id,
         facility_id=payload.facility_id,
+        source=payload.source,
     )
 
     if existing_favorite is not None:
@@ -146,6 +166,7 @@ def add_favorite(
             user_id=current_user.id,
             list_id=payload.list_id,
             facility_id=payload.facility_id,
+            source=payload.source,
         )
 
     except IntegrityError:
@@ -197,28 +218,22 @@ def remove_favorite(
     status_code=status.HTTP_200_OK,
 )
 def read_favorite_status(
-    facility_id: UUID,
+    facility_id: str,
+    source: FacilitySource = "internal",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     특정 시설이 어느 즐겨찾기 목록에 저장되어 있는지 조회한다.
     """
-    facility = get_facility_by_id(
-        db=db,
-        facility_id=facility_id,
-    )
-
-    if facility is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="시설을 찾을 수 없습니다.",
-        )
+    if source == "internal":
+        _require_internal_facility(db=db, facility_id=facility_id)
 
     favorite_list_ids = get_favorite_status(
         db=db,
         user_id=current_user.id,
         facility_id=facility_id,
+        source=source,
     )
 
     return FavoriteStatusRead(

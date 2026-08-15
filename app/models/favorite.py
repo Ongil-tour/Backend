@@ -6,6 +6,8 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
+    String,
     UniqueConstraint,
     func,
 )
@@ -76,8 +78,10 @@ class Favorite(Base):
         UniqueConstraint(
             "list_id",
             "facility_id",
-            name="uq_favorites_list_id_facility_id",
+            "source",
+            name="uq_favorites_list_id_facility_id_source",
         ),
+        Index("ix_favorites_facility_id_source", "facility_id", "source"),
     )
 
     id = Column(
@@ -93,18 +97,25 @@ class Favorite(Base):
         index=True,
     )
 
-    facility_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("facilities.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
     list_id = Column(
         UUID(as_uuid=True),
         ForeignKey("favorite_lists.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+
+    # 내부 DB(facilities.id, UUID)와 카카오 로컬 실시간 결과(place id, 숫자 문자열)를
+    # 둘 다 담아야 해서 UUID FK가 아니라 문자열로 둔다. 어느 소스인지는 source로 구분한다
+    # (app/routers/map.py의 UnifiedFacilityItem.source와 동일한 개념).
+    facility_id = Column(
+        String(255),
+        nullable=False,
+    )
+
+    source = Column(
+        String(20),
+        nullable=False,
+        server_default="internal",
     )
 
     created_at = Column(
@@ -117,5 +128,3 @@ class Favorite(Base):
         "FavoriteList",
         back_populates="favorites",
     )
-
-    facility = relationship("Facility")

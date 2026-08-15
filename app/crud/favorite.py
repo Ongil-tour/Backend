@@ -102,7 +102,7 @@ def get_facility_by_id(
     facility_id: UUID,
 ) -> Facility | None:
     """
-    시설을 UUID로 조회한다.
+    시설을 UUID로 조회한다. internal 소스 존재 검증에만 쓰인다.
     """
     return (
         db.query(Facility)
@@ -138,19 +138,18 @@ def get_favorite_by_id(
 def get_favorite_by_list_and_facility(
     db: Session,
     list_id: UUID,
-    facility_id: UUID,
+    facility_id: str,
+    source: str,
 ) -> Favorite | None:
     """
-    특정 목록에 특정 시설이 이미 저장되어 있는지 조회한다.
-
-    list_id와 facility_id가 모두 일치하는 경우에만
-    기존 즐겨찾기로 판단한다.
+    특정 목록에 특정 시설(source 기준)이 이미 저장되어 있는지 조회한다.
     """
     return (
         db.query(Favorite)
         .filter(
             Favorite.list_id == list_id,
             Favorite.facility_id == facility_id,
+            Favorite.source == source,
         )
         .first()
     )
@@ -160,7 +159,8 @@ def create_favorite(
     db: Session,
     user_id: UUID,
     list_id: UUID,
-    facility_id: UUID,
+    facility_id: str,
+    source: str,
 ) -> Favorite:
     """
     현재 사용자의 즐겨찾기 목록에 시설을 저장한다.
@@ -169,6 +169,7 @@ def create_favorite(
         user_id=user_id,
         list_id=list_id,
         facility_id=facility_id,
+        source=source,
     )
 
     db.add(favorite)
@@ -192,10 +193,11 @@ def delete_favorite(
 def get_favorite_status(
     db: Session,
     user_id: UUID,
-    facility_id: UUID,
+    facility_id: str,
+    source: str,
 ) -> list[UUID]:
     """
-    해당 시설이 저장된 현재 사용자의 목록 ID를 반환한다.
+    해당 시설(source 기준)이 저장된 현재 사용자의 목록 ID를 반환한다.
     """
     rows = (
         db.query(Favorite.list_id)
@@ -206,6 +208,7 @@ def get_favorite_status(
         .filter(
             FavoriteList.user_id == user_id,
             Favorite.facility_id == facility_id,
+            Favorite.source == source,
         )
         .all()
     )

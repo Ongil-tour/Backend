@@ -94,20 +94,20 @@ def delete_test_facilities(
     db = SessionLocal()
 
     try:
-        uuid_ids = [
-            uuid.UUID(facility_id)
-            for facility_id in facility_ids
-        ]
-
         (
             db.query(Favorite)
             .filter(
-                Favorite.facility_id.in_(uuid_ids)
+                Favorite.facility_id.in_(facility_ids)
             )
             .delete(
                 synchronize_session=False
             )
         )
+
+        uuid_ids = [
+            uuid.UUID(facility_id)
+            for facility_id in facility_ids
+        ]
 
         (
             db.query(Facility)
@@ -128,6 +128,7 @@ def delete_test_facilities(
 def create_favorite(
     list_id: str,
     facility_id: str,
+    source: str = "internal",
 ):
     """전달받은 목록에 시설을 즐겨찾기로 저장한다."""
     return client.post(
@@ -135,6 +136,7 @@ def create_favorite(
         json={
             "list_id": list_id,
             "facility_id": facility_id,
+            "source": source,
         },
     )
 
@@ -244,6 +246,20 @@ def test_create_favorite_with_nonexistent_facility_returns_404():
     )
 
     assert response.status_code == 404
+
+
+def test_create_favorite_with_non_uuid_internal_facility_id_returns_422():
+    list_id = get_list_id(
+        "FREQUENT"
+    )
+
+    response = create_favorite(
+        list_id=list_id,
+        facility_id="521460056",  # 카카오 place id 형식, internal 소스엔 부적합
+        source="internal",
+    )
+
+    assert response.status_code == 422
 
 
 # =========================================================
@@ -586,3 +602,45 @@ def test_favorite_status_returns_all_list_ids():
         delete_test_facilities(
             facility_ids
         )
+
+
+# =========================================================
+# 카카오 소스(source=kakao) 테스트
+# =========================================================
+
+
+def test_create_kakao_favorite_skips_existence_check():
+    """kakao 소스는 내부 DB에 없는 place id라도 재조회 없이 저장을 허용한다."""
+    list_id = get_list_id("FREQUENT")
+    facility_id = f"kakao-test-{uuid.uuid4().hex[:8]}"
+    favorite_id = None
+
+    try:
+        response = create_favorite(
+            list_id=list_id,
+            facility_id=facility_id,
+            source="kakao",
+        )
+
+        assert response.status_code == 201, response.text
+
+        body = response.json()
+        assert body["facility_id"] == facility_id
+        assert body["source"] == "kakao"
+
+        favorite_id = body["id"]
+
+        status_response = client.get(
+            "/favorites/status",
+            params={
+                "facility_id": facility_id,
+                "source": "kakao",
+            },
+        )
+
+        assert status_response.status_code == 200
+        assert status_response.json()["is_favorite"] is True
+
+    finally:
+        if favorite_id is not None:
+            delete_favorite(favorite_id)
