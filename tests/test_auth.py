@@ -93,7 +93,8 @@ def _cleanup_user_by_email(email: str):
 
 
 def _patch_google_provider(monkeypatch, provider_user_id: str, email: str):
-    """구글은 idToken 검증 방식이라 verify_google_id_token 하나만 갈아끼우면 됨."""
+    """구글/카카오/네이버 전부 이제 SDK 토큰 검증 함수 하나만 갈아끼우면 됨
+    (인가 코드 교환 단계가 없어짐)."""
 
     async def fake_verify_id_token(id_token):
         return {"provider_user_id": provider_user_id, "email": email}
@@ -102,14 +103,17 @@ def _patch_google_provider(monkeypatch, provider_user_id: str, email: str):
 
 
 def _patch_kakao_provider(monkeypatch, provider_user_id: str, email: str):
-    async def fake_get_access_token(code):
-        return "fake-kakao-access-token"
-
     async def fake_get_user_info(token):
         return {"provider_user_id": provider_user_id, "email": email}
 
-    monkeypatch.setattr("app.routers.auth.get_kakao_access_token", fake_get_access_token)
     monkeypatch.setattr("app.routers.auth.get_kakao_user_info", fake_get_user_info)
+
+
+def _patch_naver_provider(monkeypatch, provider_user_id: str, email: str):
+    async def fake_get_user_info(token):
+        return {"provider_user_id": provider_user_id, "email": email}
+
+    monkeypatch.setattr("app.routers.auth.get_naver_user_info", fake_get_user_info)
 
 
 # =========================================================
@@ -123,7 +127,7 @@ def test_callback_creates_new_user_with_three_favorite_lists(monkeypatch):
     _patch_google_provider(monkeypatch, provider_user_id=f"google-{uuid.uuid4().hex[:8]}", email=email)
 
     try:
-        response = client.post("/auth/google/callback", json={"id_token": "fake-id-token"})
+        response = client.post("/auth/google/callback", json={"token": "fake-id-token"})
 
         assert response.status_code == 200, response.text
         data = response.json()
@@ -166,7 +170,7 @@ def test_callback_existing_social_account_reuses_same_user(monkeypatch):
     _patch_google_provider(monkeypatch, provider_user_id=provider_user_id, email=email)
 
     try:
-        first_response = client.post("/auth/google/callback", json={"id_token": "fake-id-token-1"})
+        first_response = client.post("/auth/google/callback", json={"token": "fake-id-token-1"})
         assert first_response.status_code == 200, first_response.text
 
         db = SessionLocal()
@@ -175,7 +179,7 @@ def test_callback_existing_social_account_reuses_same_user(monkeypatch):
         finally:
             db.close()
 
-        second_response = client.post("/auth/google/callback", json={"id_token": "fake-id-token-2"})
+        second_response = client.post("/auth/google/callback", json={"token": "fake-id-token-2"})
         assert second_response.status_code == 200, second_response.text
 
         db = SessionLocal()
@@ -193,14 +197,14 @@ def test_callback_same_email_different_provider_links_account(monkeypatch):
     email = f"linked-{uuid.uuid4().hex[:8]}@example.com"
 
     _patch_kakao_provider(monkeypatch, provider_user_id=f"kakao-{uuid.uuid4().hex[:8]}", email=email)
-    first_response = client.post("/auth/kakao/callback", json={"code": "fake-code"})
+    first_response = client.post("/auth/kakao/callback", json={"token": "fake-kakao-token"})
     assert first_response.status_code == 200, first_response.text
 
     try:
         _patch_google_provider(
             monkeypatch, provider_user_id=f"google-{uuid.uuid4().hex[:8]}", email=email
         )
-        second_response = client.post("/auth/google/callback", json={"id_token": "fake-id-token"})
+        second_response = client.post("/auth/google/callback", json={"token": "fake-id-token"})
 
         assert second_response.status_code == 200, second_response.text
 
@@ -229,20 +233,44 @@ def test_callback_same_email_different_provider_links_account(monkeypatch):
         _cleanup_user_by_email(email)
 
 
+def test_callback_naver_login_works_like_kakao(monkeypatch):
+    """네이버도 카카오와 동일하게 SDK accessToken 검증만으로 로그인/가입이 돼야 한다."""
+    email = f"naver-{uuid.uuid4().hex[:8]}@example.com"
+    _patch_naver_provider(monkeypatch, provider_user_id=f"naver-{uuid.uuid4().hex[:8]}", email=email)
+
+    try:
+        response = client.post("/auth/naver/callback", json={"token": "fake-naver-token"})
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert "access_token" in data
+        assert "refresh_token" in data
+
+        db = SessionLocal()
+        try:
+            social_account = (
+                db.query(SocialAccount)
+                .join(User, SocialAccount.user_id == User.id)
+                .filter(User.email == email)
+                .first()
+            )
+            assert social_account is not None
+            assert social_account.provider == "naver"
+        finally:
+            db.close()
+
+    finally:
+        _cleanup_user_by_email(email)
+
+
 def test_callback_unsupported_provider_returns_400():
-    response = client.post("/auth/unknown/callback", json={"code": "fake-code"})
+    response = client.post("/auth/unknown/callback", json={"token": "fake-token"})
     assert response.status_code == 400
 
 
-def test_callback_google_without_id_token_returns_422():
-    """구글 로그인인데 id_token을 안 보내면 422여야 한다."""
-    response = client.post("/auth/google/callback", json={"code": "fake-code"})
-    assert response.status_code == 422
-
-
-def test_callback_kakao_without_code_returns_422():
-    """카카오 로그인인데 code를 안 보내면 422여야 한다."""
-    response = client.post("/auth/kakao/callback", json={"id_token": "fake-id-token"})
+def test_callback_without_token_returns_422():
+    """provider 상관없이 token을 안 보내면 422여야 한다."""
+    response = client.post("/auth/google/callback", json={})
     assert response.status_code == 422
 
 
