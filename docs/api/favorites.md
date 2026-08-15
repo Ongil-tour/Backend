@@ -274,6 +274,44 @@ DELETE /favorites/e32eab8e-4245-46ab-8127-bae565732668
 
 ---
 
+## 4-1. 즐겨찾기 목록 전체 삭제
+
+### 기본 정보
+
+- Method: `DELETE`
+- URL: `/favorites/lists/{list_id}`
+- 설명: 특정 즐겨찾기 목록에 저장된 항목을 전부 삭제합니다 ("즐겨찾기 모두 삭제" 버튼용). 목록 자체(FREQUENT/WISHLIST/VISITED)는 고정 리스트라 삭제되지 않고, 안의 항목만 비워집니다.
+
+### Path Parameter
+
+| 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `list_id` | UUID | 필수 | 항목을 전부 삭제할 즐겨찾기 목록 ID |
+
+### 요청 예시
+
+```http
+DELETE /favorites/lists/4bd8b578-b03e-4f23-a8b2-f489fb92df92
+```
+
+### 성공 응답
+
+- Status Code: `204 No Content`
+- Response Body: 없음
+- 이미 비어있는 목록에 호출해도 204로 성공 처리됩니다 (멱등).
+
+### 존재하지 않거나 현재 사용자 소유가 아닌 목록
+
+- Status Code: `404 Not Found`
+
+```json
+{
+  "detail": "즐겨찾기 목록을 찾을 수 없습니다."
+}
+```
+
+---
+
 ## 5. 시설 즐겨찾기 상태 조회
 
 ### 기본 정보
@@ -392,3 +430,5 @@ UUID 형식이 잘못된 값을 전달한 경우 FastAPI 입력 검증에 의해
 - 즐겨찾기 상태 조회 시 저장된 모든 목록 ID 반환
 - `source: "internal"`인데 `facility_id`가 UUID가 아니면 `422`
 - `source: "kakao"`는 존재 검증 없이 저장 및 상태 조회 가능
+- 목록 전체 삭제 시 해당 목록 항목만 지워지고 다른 목록/목록 자체는 유지
+- 존재하지 않는 목록 전체 삭제 시 `404`

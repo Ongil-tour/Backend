@@ -644,3 +644,65 @@ def test_create_kakao_favorite_skips_existence_check():
     finally:
         if favorite_id is not None:
             delete_favorite(favorite_id)
+
+
+# =========================================================
+# 즐겨찾기 목록 전체 삭제 테스트
+# =========================================================
+
+
+def test_clear_favorite_list_deletes_all_items_but_keeps_list():
+    """DELETE /favorites/lists/{list_id} - 목록 안 항목만 다 지워지고 목록 자체는 남아야 함."""
+    target_list_id = get_list_id("FREQUENT")
+    other_list_id = get_list_id("WISHLIST")
+
+    facility_ids = create_test_facilities(2)
+    other_facility_ids = create_test_facilities(1)
+
+    try:
+        for facility_id in facility_ids:
+            response = create_favorite(list_id=target_list_id, facility_id=facility_id)
+            assert response.status_code == 201, response.text
+
+        other_response = create_favorite(
+            list_id=other_list_id, facility_id=other_facility_ids[0]
+        )
+        assert other_response.status_code == 201, other_response.text
+
+        clear_response = client.delete(f"/favorites/lists/{target_list_id}")
+        assert clear_response.status_code == 204
+
+        # 대상 목록은 비어야 함
+        target_items = client.get(f"/favorites/lists/{target_list_id}")
+        assert target_items.status_code == 200
+        assert target_items.json() == []
+
+        # 목록 자체는 남아있고 favorite_count도 0이어야 함
+        favorite_lists = get_favorite_lists()
+        target_list = next(
+            item for item in favorite_lists if item["id"] == target_list_id
+        )
+        assert target_list["favorite_count"] == 0
+
+        # 다른 목록(WISHLIST)의 즐겨찾기는 영향받지 않아야 함
+        other_items = client.get(f"/favorites/lists/{other_list_id}")
+        assert other_items.status_code == 200
+        assert len(other_items.json()) == 1
+        assert other_items.json()[0]["facility_id"] == other_facility_ids[0]
+
+    finally:
+        delete_favorite_response = client.delete(
+            f"/favorites/lists/{other_list_id}"
+        )
+        assert delete_favorite_response.status_code == 204
+
+        delete_test_facilities(facility_ids)
+        delete_test_facilities(other_facility_ids)
+
+
+def test_clear_nonexistent_favorite_list_returns_404():
+    nonexistent_list_id = uuid.uuid4()
+
+    response = client.delete(f"/favorites/lists/{nonexistent_list_id}")
+
+    assert response.status_code == 404

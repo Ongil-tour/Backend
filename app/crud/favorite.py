@@ -190,6 +190,29 @@ def delete_favorite(
     db.commit()
 
 
+def clear_favorites_in_list(
+    db: Session,
+    list_id: UUID,
+) -> int:
+    """
+    특정 목록에 저장된 즐겨찾기 항목을 전부 삭제한다 (목록 자체는 남긴다).
+    "즐겨찾기 모두 삭제" 버튼용. 반환값은 삭제된 항목 개수.
+    """
+    deleted_count = (
+        db.query(Favorite)
+        .filter(
+            Favorite.list_id == list_id,
+        )
+        .delete(
+            synchronize_session=False,
+        )
+    )
+
+    db.commit()
+
+    return deleted_count
+
+
 def get_favorite_status(
     db: Session,
     user_id: UUID,
