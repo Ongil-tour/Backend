@@ -1,10 +1,11 @@
 """
 Auth 라우터 (담당: 이다영) - 총 3개 엔드포인트 확정.
 소셜 로그인은 signup/login 구분 없이 provider callback 하나로 통일.
-구글은 idToken 방식(프론트 SDK가 이미 로그인 완료), 카카오/네이버는 code 방식.
-"""
-from typing import Optional
 
+구글/카카오/네이버 전부 프론트가 각 provider 네이티브 SDK로 로그인을 끝내고
+SDK가 발급한 토큰(구글=idToken, 카카오/네이버=accessToken)을 그대로 넘겨준다.
+백엔드는 인가 코드 교환 없이 그 토큰을 provider에게 검증만 요청한다.
+"""
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -22,8 +23,8 @@ from app.core.security import (
 )
 from app.services.oauth import (
     verify_google_id_token,
-    get_kakao_access_token, get_kakao_user_info,
-    get_naver_access_token, get_naver_user_info,
+    get_kakao_user_info,
+    get_naver_user_info,
 )
 from jose import JWTError
 
@@ -31,29 +32,21 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class OAuthLoginRequest(BaseModel):
-    code: Optional[str] = None       # 카카오/네이버 (기존 방식)
-    id_token: Optional[str] = None   # 구글 (SDK가 이미 로그인 완료 후 발급한 idToken)
+    # 구글=idToken, 카카오/네이버=accessToken. SDK가 발급한 값을 그대로 담아 보낸다.
+    token: str
 
 
 @router.post("/{provider}/callback", response_model=TokenPair)
 async def oauth_callback(provider: str, payload: OAuthLoginRequest, db: Session = Depends(get_db)):
-    """소셜 로그인. 구글은 idToken 검증, 카카오/네이버는 code 방식. 최초 로그인 시 회원가입까지 겸함."""
+    """소셜 로그인. 프론트 SDK가 발급한 토큰을 provider에 검증만 요청한다. 최초 로그인 시 회원가입까지 겸함."""
     if provider == "google":
-        if not payload.id_token:
-            raise HTTPException(status_code=422, detail="구글 로그인은 id_token이 필요합니다.")
-        provider_user = await verify_google_id_token(payload.id_token)
+        provider_user = await verify_google_id_token(payload.token)
 
     elif provider == "kakao":
-        if not payload.code:
-            raise HTTPException(status_code=422, detail="카카오 로그인은 code가 필요합니다.")
-        provider_access_token = await get_kakao_access_token(payload.code)
-        provider_user = await get_kakao_user_info(provider_access_token)
+        provider_user = await get_kakao_user_info(payload.token)
 
     elif provider == "naver":
-        if not payload.code:
-            raise HTTPException(status_code=422, detail="네이버 로그인은 code가 필요합니다.")
-        provider_access_token = await get_naver_access_token(payload.code)
-        provider_user = await get_naver_user_info(provider_access_token)
+        provider_user = await get_naver_user_info(payload.token)
 
     else:
         raise HTTPException(status_code=400, detail=f"지원하지 않는 provider: {provider}")
