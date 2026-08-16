@@ -30,7 +30,7 @@ def get_social_account(db: Session, provider: str, provider_user_id: str):
 
 
 def create_user_with_social_account(
-    db: Session, email: str, provider: str, provider_user_id: str
+    db: Session, email: str | None, provider: str, provider_user_id: str
 ):
     """
     최초 로그인(=회원가입)일 때 호출.

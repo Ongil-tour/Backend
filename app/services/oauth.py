@@ -81,7 +81,7 @@ async def get_kakao_access_token(code: str) -> str:
 
 
 async def get_kakao_user_info(kakao_access_token: str) -> dict:
-    """카카오 access token으로 사용자 정보(email) 조회."""
+    """카카오 access token으로 사용자 정보(email) 조회. 이메일이 없으면 None."""
     user_info_url = "https://kapi.kakao.com/v2/user/me"
     headers = {"Authorization": f"Bearer {kakao_access_token}"}
 
@@ -94,9 +94,6 @@ async def get_kakao_user_info(kakao_access_token: str) -> dict:
     user_data = response.json()
     kakao_account = user_data.get("kakao_account", {})
     email = kakao_account.get("email")
-
-    if not email:
-        raise HTTPException(status_code=400, detail="카카오 계정에서 이메일을 가져올 수 없습니다.")
 
     return {
         "provider_user_id": str(user_data["id"]),

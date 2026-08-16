@@ -93,15 +93,10 @@ def _cleanup_user_by_email(email: str):
 
 
 def _patch_google_provider(monkeypatch, provider_user_id: str, email: str):
-    async def fake_get_access_token(code):
-        return "fake-google-access-token"
-
-    async def fake_get_user_info(token):
+    async def fake_verify_id_token(id_token):
         return {"provider_user_id": provider_user_id, "email": email}
 
-    monkeypatch.setattr("app.routers.auth.get_google_access_token", fake_get_access_token)
-    monkeypatch.setattr("app.routers.auth.get_google_user_info", fake_get_user_info)
-
+    monkeypatch.setattr("app.routers.auth.verify_google_id_token", fake_verify_id_token)
 
 def _patch_kakao_provider(monkeypatch, provider_user_id: str, email: str):
     async def fake_get_access_token(code):
@@ -125,7 +120,7 @@ def test_callback_creates_new_user_with_three_favorite_lists(monkeypatch):
     _patch_google_provider(monkeypatch, provider_user_id=f"google-{uuid.uuid4().hex[:8]}", email=email)
 
     try:
-        response = client.post("/auth/google/callback", params={"code": "fake-code"})
+        response = client.post("/auth/google/callback", json={"id_token": "fake-id-token"})
 
         assert response.status_code == 200, response.text
         data = response.json()
@@ -168,7 +163,7 @@ def test_callback_existing_social_account_reuses_same_user(monkeypatch):
     _patch_google_provider(monkeypatch, provider_user_id=provider_user_id, email=email)
 
     try:
-        first_response = client.post("/auth/google/callback", params={"code": "fake-code-1"})
+        first_response = client.post("/auth/google/callback", json={"id_token": "fake-id-token-1"})
         assert first_response.status_code == 200, first_response.text
 
         db = SessionLocal()
@@ -177,7 +172,7 @@ def test_callback_existing_social_account_reuses_same_user(monkeypatch):
         finally:
             db.close()
 
-        second_response = client.post("/auth/google/callback", params={"code": "fake-code-2"})
+        second_response = client.post("/auth/google/callback", json={"id_token": "fake-id-token-2"})
         assert second_response.status_code == 200, second_response.text
 
         db = SessionLocal()
@@ -195,14 +190,14 @@ def test_callback_same_email_different_provider_links_account(monkeypatch):
     email = f"linked-{uuid.uuid4().hex[:8]}@example.com"
 
     _patch_kakao_provider(monkeypatch, provider_user_id=f"kakao-{uuid.uuid4().hex[:8]}", email=email)
-    first_response = client.post("/auth/kakao/callback", params={"code": "fake-code"})
+    first_response = client.post("/auth/kakao/callback", json={"code": "fake-code"})
     assert first_response.status_code == 200, first_response.text
 
     try:
         _patch_google_provider(
             monkeypatch, provider_user_id=f"google-{uuid.uuid4().hex[:8]}", email=email
         )
-        second_response = client.post("/auth/google/callback", params={"code": "fake-code"})
+        second_response = client.post("/auth/google/callback", json={"id_token": "fake-id-token"})
 
         assert second_response.status_code == 200, second_response.text
 
@@ -232,7 +227,7 @@ def test_callback_same_email_different_provider_links_account(monkeypatch):
 
 
 def test_callback_unsupported_provider_returns_400():
-    response = client.post("/auth/unknown/callback", params={"code": "fake-code"})
+    response = client.post("/auth/unknown/callback", json={"code": "fake-code"})
     assert response.status_code == 400
 
 
