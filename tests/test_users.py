@@ -28,6 +28,68 @@ def get_my_settings():
         db.close()
 
 
+def test_get_settings_returns_current_values():
+    """GET /users/me/settings - PATCH로 바꿔둔 값이 그대로 조회돼야 함 (영구 저장 확인)."""
+    patch_response = client.patch(
+        "/users/me", json={"profile_image": "profile2.png", "dark_mode": True}
+    )
+    assert patch_response.status_code == 200, patch_response.text
+
+    try:
+        get_response = client.get("/users/me/settings")
+
+        assert get_response.status_code == 200
+        data = get_response.json()
+        assert data["profile_image"] == "profile2.png"
+        assert data["dark_mode"] is True
+
+    finally:
+        # 원래 값으로 되돌려놓기
+        client.patch("/users/me", json={"profile_image": "profile1.png", "dark_mode": False})
+
+
+def test_get_settings_creates_defaults_for_new_user():
+    """GET /users/me/settings - 한 번도 PATCH 안 한 신규 유저도 기본값으로 조회돼야 함."""
+    user_id = uuid.uuid4()
+    token = create_access_token(user_id)
+
+    db = SessionLocal()
+    try:
+        db.add(User(id=user_id, email=f"settings-{uuid.uuid4().hex[:8]}@example.com"))
+        db.commit()
+    finally:
+        db.close()
+
+    try:
+        response = client.get(
+            "/users/me/settings", headers={"Authorization": f"Bearer {token}"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["profile_image"] == "profile1.png"
+        assert data["font_size"] == "md"
+        assert data["dark_mode"] is False
+        assert data["high_contrast"] is False
+
+        db = SessionLocal()
+        try:
+            assert (
+                db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+                is not None
+            )
+        finally:
+            db.close()
+
+    finally:
+        db = SessionLocal()
+        try:
+            db.query(User).filter(User.id == user_id).delete()
+            db.commit()
+        finally:
+            db.close()
+
+
 def test_patch_settings_success():
     """PATCH /users/me - 정상적인 값으로 요청하면 200과 함께 변경된 값이 와야 함."""
     response = client.patch("/users/me", json={"font_size": "lg", "dark_mode": True})

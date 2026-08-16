@@ -25,6 +25,19 @@ def get_my_profile(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+@router.get("/me/settings", response_model=UserSettingsRead)
+def get_my_settings(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    내 설정 조회 (고대비/폰트크기/다크모드/프로필사진):
+    한 번도 PATCH /users/me를 안 한 신규 유저도 기본값으로 조회 가능하도록
+    없으면 만들어서 반환한다 (앱 시작 시 저장된 설정을 불러올 때 사용).
+    """
+    return crud_user.get_or_create_user_settings(db=db, user_id=current_user.id)
+
+
 @router.patch("/me", response_model=UserSettingsRead)
 def update_my_settings(
     payload: UserSettingsUpdate,
