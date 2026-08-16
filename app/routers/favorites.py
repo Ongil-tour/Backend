@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.crud.favorite import (
+    clear_favorites_in_list,
     create_favorite,
     delete_favorite,
     get_facility_by_id,
@@ -115,6 +116,41 @@ def read_favorites_in_list(
         db=db,
         user_id=current_user.id,
         list_id=list_id,
+    )
+
+
+@router.delete(
+    "/lists/{list_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def clear_favorite_list(
+    list_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    특정 즐겨찾기 목록에 저장된 항목을 전부 삭제한다 ("즐겨찾기 모두 삭제" 버튼용).
+    목록 자체(FREQUENT/WISHLIST/VISITED)는 고정 리스트라 삭제되지 않고, 안의 항목만 비워진다.
+    """
+    favorite_list = get_favorite_list_by_id(
+        db=db,
+        user_id=current_user.id,
+        list_id=list_id,
+    )
+
+    if favorite_list is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="즐겨찾기 목록을 찾을 수 없습니다.",
+        )
+
+    clear_favorites_in_list(
+        db=db,
+        list_id=list_id,
+    )
+
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT,
     )
 
 
