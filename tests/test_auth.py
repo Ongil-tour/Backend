@@ -263,6 +263,85 @@ def test_callback_naver_login_works_like_kakao(monkeypatch):
         _cleanup_user_by_email(email)
 
 
+def test_callback_kakao_without_email_creates_user_with_null_email(monkeypatch):
+    """카카오는 이메일 제공 권한이 제한될 수 있어 email=None이어도 정상 가입돼야 한다."""
+    provider_user_id = f"kakao-noemail-{uuid.uuid4().hex[:8]}"
+    _patch_kakao_provider(monkeypatch, provider_user_id=provider_user_id, email=None)
+
+    db = SessionLocal()
+    try:
+        response = client.post("/auth/kakao/callback", json={"token": "fake-kakao-token"})
+
+        assert response.status_code == 200, response.text
+
+        social_account = (
+            db.query(SocialAccount)
+            .filter(
+                SocialAccount.provider == "kakao",
+                SocialAccount.provider_user_id == provider_user_id,
+            )
+            .first()
+        )
+        assert social_account is not None
+
+        user = db.query(User).filter(User.id == social_account.user_id).first()
+        assert user is not None
+        assert user.email is None
+
+    finally:
+        db.query(User).filter(
+            User.id.in_(
+                db.query(SocialAccount.user_id).filter(
+                    SocialAccount.provider_user_id == provider_user_id
+                )
+            )
+        ).delete(synchronize_session=False)
+        db.commit()
+        db.close()
+
+
+def test_callback_two_kakao_users_without_email_stay_separate(monkeypatch):
+    """이메일 없는 카카오 유저 2명이 서로 다른 계정으로 남아야 한다 (email=None으로 잘못 매칭 금지)."""
+    provider_user_id_a = f"kakao-noemail-a-{uuid.uuid4().hex[:8]}"
+    provider_user_id_b = f"kakao-noemail-b-{uuid.uuid4().hex[:8]}"
+
+    db = SessionLocal()
+    try:
+        _patch_kakao_provider(monkeypatch, provider_user_id=provider_user_id_a, email=None)
+        response_a = client.post("/auth/kakao/callback", json={"token": "fake-token-a"})
+        assert response_a.status_code == 200, response_a.text
+
+        _patch_kakao_provider(monkeypatch, provider_user_id=provider_user_id_b, email=None)
+        response_b = client.post("/auth/kakao/callback", json={"token": "fake-token-b"})
+        assert response_b.status_code == 200, response_b.text
+
+        user_id_a = (
+            db.query(SocialAccount.user_id)
+            .filter(SocialAccount.provider_user_id == provider_user_id_a)
+            .scalar()
+        )
+        user_id_b = (
+            db.query(SocialAccount.user_id)
+            .filter(SocialAccount.provider_user_id == provider_user_id_b)
+            .scalar()
+        )
+
+        assert user_id_a != user_id_b
+
+    finally:
+        db.query(User).filter(
+            User.id.in_(
+                db.query(SocialAccount.user_id).filter(
+                    SocialAccount.provider_user_id.in_(
+                        [provider_user_id_a, provider_user_id_b]
+                    )
+                )
+            )
+        ).delete(synchronize_session=False)
+        db.commit()
+        db.close()
+
+
 def test_callback_unsupported_provider_returns_400():
     response = client.post("/auth/unknown/callback", json={"token": "fake-token"})
     assert response.status_code == 400

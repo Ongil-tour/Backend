@@ -60,7 +60,11 @@ async def oauth_callback(provider: str, payload: OAuthLoginRequest, db: Session 
         # 기존 유저 -> 로그인
         user_id = social_account.user_id
     else:
-        existing_user = get_user_by_email(db, email=provider_user["email"])
+        email = provider_user["email"]
+        # email이 None이면(카카오 이메일 미제공 등) 동일인 판단 자체가 불가능하므로
+        # 계정 연동을 시도하지 않고 바로 새 유저로 취급한다.
+        # (email=None으로 조회하면 이메일 없는 다른 유저와 잘못 매칭될 수 있어 반드시 막아야 함)
+        existing_user = get_user_by_email(db, email=email) if email else None
 
         if existing_user:
             # 다른 provider로 이미 가입된 이메일 -> 새 User를 또 만들지 않고 계정만 연동

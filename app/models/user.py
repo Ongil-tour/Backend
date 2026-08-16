@@ -18,7 +18,11 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
     )
-    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    # 카카오는 최근 정책상 신규 앱의 이메일 제공 권한이 제한돼있어, 이메일 없이도
+    # 소셜 로그인 계정 생성이 가능해야 함 -> nullable로 변경.
+    # unique=True는 유지해도 안전함 (Postgres는 NULL끼리는 unique 제약에서
+    # 서로 다른 값으로 취급하므로 이메일 없는 유저가 여러 명이어도 충돌 안 남).
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     # cascade와 passive_deletes 옵션 추가
