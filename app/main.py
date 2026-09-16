@@ -5,12 +5,12 @@ from app.routers import auth, users, facilities, map as map_router, favorites
 
 app = FastAPI(title="Ongil-tour API", version="0.1.0")
 
-# WebView(KakaoMapView.tsx)가 source={{ html: ..., baseUrl: 'http://localhost' }}로
-# 지도 HTML을 로드하기 때문에, fetch() 요청의 Origin이 항상 http://localhost로 찍힌다.
-# dev/prod 구분 없이 baseUrl이 코드에 고정값으로 박혀있어 origin도 하나로 고정.
+# WebView(KakaoMapView.tsx)가 source={{ html: ..., baseUrl: ... }}로
+# 지도 HTML을 로드하기 때문에, fetch() 요청의 Origin이 baseUrl 값으로 찍힌다.
+# 프론트에서 baseUrl을 http://localhost -> https://localhost로 바꿔서 둘 다 허용해야 함.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost"],
+    allow_origins=["http://localhost", "https://localhost"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
