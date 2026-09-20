@@ -10,7 +10,12 @@ app = FastAPI(title="Ongil-tour API", version="0.1.0")
 # 프론트에서 baseUrl을 http://localhost -> https://localhost로 바꿔서 둘 다 허용해야 함.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "https://localhost", "http://localhost:8081"],
+    allow_origins=[
+        "http://localhost",
+        "https://localhost",
+        "http://localhost:8081",
+        "https://ongil-tour.vercel.app",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
